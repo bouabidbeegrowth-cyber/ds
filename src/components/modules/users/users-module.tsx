@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '@/store/auth-store';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -46,14 +46,21 @@ import {
 } from '@/components/ui/table';
 import { UserCog, Plus, Pencil, Shield, UserCheck, UserX } from 'lucide-react';
 
-interface User {
+interface Role {
+  id: string;
+  name: string;
+}
+
+interface UserItem {
   id: string;
   username: string;
   name: string;
-  role: 'ADMIN' | 'EMPLOYEE';
+  roleId: string | null;
+  role: string;
   active: boolean;
   createdAt: string;
   updatedAt: string;
+  roleRelation: { id: string; name: string } | null;
 }
 
 function getToken(): string | null {
@@ -64,7 +71,8 @@ function getToken(): string | null {
 export function UsersModule() {
   const currentUser = useAuthStore((s) => s.user);
 
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<UserItem[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -74,17 +82,17 @@ export function UsersModule() {
     name: '',
     username: '',
     password: '',
-    role: 'EMPLOYEE' as 'ADMIN' | 'EMPLOYEE',
+    roleId: '',
   });
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState('');
 
   // Edit dialog
   const [editOpen, setEditOpen] = useState(false);
-  const [editUser, setEditUser] = useState<User | null>(null);
+  const [editUser, setEditUser] = useState<UserItem | null>(null);
   const [editForm, setEditForm] = useState({
     name: '',
-    role: 'EMPLOYEE' as 'ADMIN' | 'EMPLOYEE',
+    roleId: '',
     password: '',
   });
   const [editLoading, setEditLoading] = useState(false);
@@ -92,8 +100,23 @@ export function UsersModule() {
 
   // Toggle confirm dialog
   const [toggleOpen, setToggleOpen] = useState(false);
-  const [toggleUser, setToggleUser] = useState<User | null>(null);
+  const [toggleUser, setToggleUser] = useState<UserItem | null>(null);
   const [toggleLoading, setToggleLoading] = useState(false);
+
+  const fetchRoles = useCallback(async () => {
+    try {
+      const token = getToken();
+      const res = await fetch('/api/roles', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRoles(data.map((r: { id: string; name: string }) => ({ id: r.id, name: r.name })));
+      }
+    } catch {
+      // Silent fail for roles
+    }
+  }, []);
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -117,14 +140,23 @@ export function UsersModule() {
   }, []);
 
   useEffect(() => {
+    fetchRoles();
     fetchUsers();
-  }, [fetchUsers]);
+  }, [fetchRoles, fetchUsers]);
+
+  const getRoleName = (user: UserItem): string => {
+    return user.roleRelation?.name || 'Non assigné';
+  };
 
   // --- Create ---
   const handleCreate = async () => {
     setCreateError('');
     if (!createForm.name.trim() || !createForm.username.trim() || !createForm.password.trim()) {
       setCreateError('Tous les champs sont requis');
+      return;
+    }
+    if (!createForm.roleId) {
+      setCreateError('Veuillez sélectionner un rôle');
       return;
     }
     setCreateLoading(true);
@@ -144,7 +176,7 @@ export function UsersModule() {
         return;
       }
       setCreateOpen(false);
-      setCreateForm({ name: '', username: '', password: '', role: 'EMPLOYEE' });
+      setCreateForm({ name: '', username: '', password: '', roleId: '' });
       fetchUsers();
     } catch {
       setCreateError('Erreur de connexion au serveur');
@@ -154,9 +186,13 @@ export function UsersModule() {
   };
 
   // --- Edit ---
-  const openEdit = (user: User) => {
+  const openEdit = (user: UserItem) => {
     setEditUser(user);
-    setEditForm({ name: user.name, role: user.role, password: '' });
+    setEditForm({
+      name: user.name,
+      roleId: user.roleId || user.roleRelation?.id || '',
+      password: '',
+    });
     setEditError('');
     setEditOpen(true);
   };
@@ -173,7 +209,7 @@ export function UsersModule() {
       const body: Record<string, unknown> = {
         id: editUser.id,
         name: editForm.name,
-        role: editForm.role,
+        roleId: editForm.roleId,
       };
       if (editForm.password.trim()) {
         body.password = editForm.password;
@@ -201,8 +237,7 @@ export function UsersModule() {
   };
 
   // --- Toggle ---
-  const openToggle = (user: User) => {
-    // Cannot deactivate yourself
+  const openToggle = (user: UserItem) => {
     if (user.id === currentUser?.id && user.active) {
       return;
     }
@@ -242,7 +277,7 @@ export function UsersModule() {
   // --- Skeletons ---
   function TableSkeleton() {
     return (
-      <div className="space-y-3">
+      <div className="space-y-3 p-6">
         {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="flex items-center gap-4">
             <Skeleton className="h-5 w-32" />
@@ -282,7 +317,7 @@ export function UsersModule() {
       <Alert>
         <Shield className="h-4 w-4" />
         <AlertDescription>
-          Gestion des comptes utilisateurs — Accès réservé aux administrateurs
+          Gestion des comptes utilisateurs — Assignez des rôles pour contrôler les accès
         </AlertDescription>
       </Alert>
 
@@ -292,7 +327,7 @@ export function UsersModule() {
           <UserCog className="h-6 w-6 text-primary" />
           <h2 className="text-2xl font-bold tracking-tight">Gestion des utilisateurs</h2>
         </div>
-        <Button onClick={() => { setCreateForm({ name: '', username: '', password: '', role: 'EMPLOYEE' }); setCreateError(''); setCreateOpen(true); }}>
+        <Button onClick={() => { setCreateForm({ name: '', username: '', password: '', roleId: '' }); setCreateError(''); setCreateOpen(true); }}>
           <Plus className="h-4 w-4 mr-2" />
           Nouvel utilisateur
         </Button>
@@ -309,9 +344,7 @@ export function UsersModule() {
       <Card className="hidden md:block">
         <CardContent className="p-0">
           {loading ? (
-            <div className="p-6">
-              <TableSkeleton />
-            </div>
+            <TableSkeleton />
           ) : users.length === 0 ? (
             <div className="p-10 text-center text-muted-foreground">
               <UserCog className="h-10 w-10 mx-auto mb-2 opacity-40" />
@@ -342,12 +375,8 @@ export function UsersModule() {
                       </TableCell>
                       <TableCell className="text-muted-foreground">{user.username}</TableCell>
                       <TableCell>
-                        <Badge variant={user.role === 'ADMIN' ? 'default' : 'secondary'}>
-                          {user.role === 'ADMIN' ? (
-                            <><Shield className="h-3 w-3 mr-1" />Admin</>
-                          ) : (
-                            'Employé'
-                          )}
+                        <Badge variant="default">
+                          {getRoleName(user)}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -426,12 +455,8 @@ export function UsersModule() {
                     </div>
                     <p className="text-sm text-muted-foreground">@{user.username}</p>
                   </div>
-                  <Badge variant={user.role === 'ADMIN' ? 'default' : 'secondary'} className="shrink-0">
-                    {user.role === 'ADMIN' ? (
-                      <><Shield className="h-3 w-3 mr-1" />Admin</>
-                    ) : (
-                      'Employé'
-                    )}
+                  <Badge variant="default" className="shrink-0">
+                    {getRoleName(user)}
                   </Badge>
                 </div>
 
@@ -529,19 +554,18 @@ export function UsersModule() {
             <div className="space-y-2">
               <Label>Rôle</Label>
               <Select
-                value={createForm.role}
-                onValueChange={(v) => setCreateForm((f) => ({ ...f, role: v as 'ADMIN' | 'EMPLOYEE' }))}
+                value={createForm.roleId}
+                onValueChange={(v) => setCreateForm((f) => ({ ...f, roleId: v }))}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Sélectionner un rôle" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ADMIN">
-                    <span className="flex items-center gap-2">
-                      <Shield className="h-3.5 w-3.5" /> Administrateur
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="EMPLOYEE">Employé</SelectItem>
+                  {roles.map((role) => (
+                    <SelectItem key={role.id} value={role.id}>
+                      {role.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -596,19 +620,18 @@ export function UsersModule() {
             <div className="space-y-2">
               <Label>Rôle</Label>
               <Select
-                value={editForm.role}
-                onValueChange={(v) => setEditForm((f) => ({ ...f, role: v as 'ADMIN' | 'EMPLOYEE' }))}
+                value={editForm.roleId}
+                onValueChange={(v) => setEditForm((f) => ({ ...f, roleId: v }))}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Sélectionner un rôle" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ADMIN">
-                    <span className="flex items-center gap-2">
-                      <Shield className="h-3.5 w-3.5" /> Administrateur
-                    </span>
-                  </SelectItem>
-                  <SelectItem value="EMPLOYEE">Employé</SelectItem>
+                  {roles.map((role) => (
+                    <SelectItem key={role.id} value={role.id}>
+                      {role.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

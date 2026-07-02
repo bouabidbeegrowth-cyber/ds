@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { verifyAuth } from '@/lib/auth';
+import { verifyAuth, requirePermission } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
   const auth = await verifyAuth(req);
   if ('error' in auth) return auth.error;
+  const permCheck = requirePermission(auth.user, 'services', 'read');
+  if (permCheck) return permCheck;
 
   const { searchParams } = new URL(req.url);
   const activeOnly = searchParams.get('active') === 'true';
@@ -20,9 +22,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const auth = await verifyAuth(req);
   if ('error' in auth) return auth.error;
-  if (auth.user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
-  }
+  const permCheck = requirePermission(auth.user, 'services', 'write');
+  if (permCheck) return permCheck;
 
   const body = await req.json();
   const { name, price, duration, description } = body;
@@ -41,9 +42,8 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   const auth = await verifyAuth(req);
   if ('error' in auth) return auth.error;
-  if (auth.user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
-  }
+  const permCheck = requirePermission(auth.user, 'services', 'write');
+  if (permCheck) return permCheck;
 
   const body = await req.json();
   const { id, ...data } = body;
@@ -69,9 +69,8 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const auth = await verifyAuth(req);
   if ('error' in auth) return auth.error;
-  if (auth.user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
-  }
+  const permCheck = requirePermission(auth.user, 'services', 'delete');
+  if (permCheck) return permCheck;
 
   const body = await req.json();
   const { id } = body;

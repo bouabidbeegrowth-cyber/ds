@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuthStore } from '@/store/auth-store';
+import { canWrite, canDelete } from '@/lib/permissions';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -298,7 +299,7 @@ export function ExpensesModule() {
             </p>
           </div>
         </div>
-        {isAdmin && (
+        {canWrite(user?.permissions?.expenses) && (
           <Button onClick={openCreateDialog} className="w-full sm:w-auto">
             <Plus className="h-4 w-4 mr-2" />
             Nouvelle dépense
@@ -397,7 +398,7 @@ export function ExpensesModule() {
               </div>
               <p className="text-sm font-medium text-foreground mb-1">Aucune dépense</p>
               <p className="text-xs text-muted-foreground">
-                {isAdmin
+                {canWrite(user?.permissions?.expenses)
                   ? 'Cliquez sur « Nouvelle dépense » pour ajouter une dépense.'
                   : "Aucune dépense enregistrée pour cette période."}
               </p>
@@ -412,7 +413,7 @@ export function ExpensesModule() {
                     <TableHead className="text-right min-w-[120px]">Montant</TableHead>
                     <TableHead className="min-w-[110px]">Date</TableHead>
                     <TableHead className="hidden md:table-cell min-w-[160px]">Description</TableHead>
-                    {isAdmin && <TableHead className="text-right w-[100px]">Actions</TableHead>}
+                    {(canWrite(user?.permissions?.expenses) || canDelete(user?.permissions?.expenses)) && <TableHead className="text-right w-[100px]">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -441,7 +442,7 @@ export function ExpensesModule() {
                         <TableCell className="hidden md:table-cell text-muted-foreground max-w-[200px] truncate">
                           {expense.description || '—'}
                         </TableCell>
-                        {isAdmin && (
+                        {canWrite(user?.permissions?.expenses) && (
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
                               <Button
@@ -453,6 +454,7 @@ export function ExpensesModule() {
                               >
                                 <Pencil className="h-4 w-4" />
                               </Button>
+                              {canDelete(user?.permissions?.expenses) && (
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -462,6 +464,7 @@ export function ExpensesModule() {
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
+                              )}
                             </div>
                           </TableCell>
                         )}
@@ -471,16 +474,16 @@ export function ExpensesModule() {
                   {/* Total row */}
                   <TableRow className="border-t-2 border-foreground/10 bg-muted/30">
                     <TableCell
-                      colSpan={isAdmin ? 2 : 1}
+                      colSpan={(canWrite(user?.permissions?.expenses) || canDelete(user?.permissions?.expenses)) ? 2 : 1}
                       className="font-bold text-foreground"
                     >
                       Total
                     </TableCell>
-                    {isAdmin && <TableCell />}
+                    {(canWrite(user?.permissions?.expenses) || canDelete(user?.permissions?.expenses)) && <TableCell />}
                     <TableCell className="text-right font-bold text-foreground tabular-nums text-base">
                       {formatAmount(summary.total)}
                     </TableCell>
-                    <TableCell colSpan={isAdmin ? 3 : 2} />
+                    <TableCell colSpan={(canWrite(user?.permissions?.expenses) || canDelete(user?.permissions?.expenses)) ? 3 : 2} />
                   </TableRow>
                 </TableBody>
               </Table>
@@ -598,7 +601,7 @@ export function ExpensesModule() {
       </Dialog>
 
       {/* ─── Delete AlertDialog (admin only) ─────────────────────────── */}
-      {isAdmin && (
+      {canDelete(user?.permissions?.expenses) && (
         <AlertDialog open={deleteOpen} onOpenChange={(open) => { if (!open) setDeleteOpen(false); }}>
           <AlertDialogContent>
             <AlertDialogHeader>

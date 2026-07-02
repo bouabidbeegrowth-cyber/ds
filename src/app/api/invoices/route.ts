@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { verifyAuth } from '@/lib/auth';
+import { verifyAuth, requirePermission } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
   const auth = await verifyAuth(req);
   if ('error' in auth) return auth.error;
+  const permCheck = requirePermission(auth.user, 'invoices', 'read');
+  if (permCheck) return permCheck;
 
   const { searchParams } = new URL(req.url);
   const clientId = searchParams.get('clientId');
@@ -39,6 +41,8 @@ export async function GET(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   const auth = await verifyAuth(req);
   if ('error' in auth) return auth.error;
+  const permCheck = requirePermission(auth.user, 'invoices', 'write');
+  if (permCheck) return permCheck;
 
   const body = await req.json();
   const { id, status, paidAmount } = body;

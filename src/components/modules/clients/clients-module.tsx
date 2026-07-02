@@ -58,6 +58,8 @@ import {
   MapPin,
   FileText,
 } from 'lucide-react';
+import { useAuthStore } from '@/store/auth-store';
+import { canWrite, canDelete } from '@/lib/permissions';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
@@ -588,6 +590,7 @@ function ClientTable({
   onDelete: (client: Client) => void;
   onHistory: (client: Client) => void;
 }) {
+  const { user } = useAuthStore();
   if (clients.length === 0) {
     return (
       <Card>
@@ -662,6 +665,7 @@ function ClientTable({
                       >
                         <History className="h-4 w-4" />
                       </Button>
+                      {canWrite(user?.permissions?.clients) && (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -671,6 +675,8 @@ function ClientTable({
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
+                      )}
+                      {canDelete(user?.permissions?.clients) && (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -680,6 +686,7 @@ function ClientTable({
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -705,6 +712,7 @@ function ClientCardList({
   onDelete: (client: Client) => void;
   onHistory: (client: Client) => void;
 }) {
+  const { user } = useAuthStore();
   if (clients.length === 0) {
     return (
       <Card>
@@ -748,6 +756,7 @@ function ClientCardList({
                 >
                   <History className="h-4 w-4" />
                 </Button>
+                {canWrite(user?.permissions?.clients) && (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -757,6 +766,8 @@ function ClientCardList({
                 >
                   <Pencil className="h-4 w-4" />
                 </Button>
+                )}
+                {canDelete(user?.permissions?.clients) && (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -766,6 +777,7 @@ function ClientCardList({
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
+                )}
               </div>
             </div>
 
@@ -800,6 +812,7 @@ function ClientCardList({
 // ─── Main Clients Module ─────────────────────────────────────────────────────
 
 export function ClientsModule() {
+  const { user } = useAuthStore();
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -894,10 +907,12 @@ export function ClientsModule() {
             {clients.length} client{clients.length !== 1 ? 's' : ''} au total
           </p>
         </div>
+        {canWrite(user?.permissions?.clients) && (
         <Button onClick={handleCreateNew} className="w-full sm:w-auto">
           <Plus className="h-4 w-4 mr-2" />
           Nouveau client
         </Button>
+        )}
       </div>
 
       {/* ── Search Bar ── */}

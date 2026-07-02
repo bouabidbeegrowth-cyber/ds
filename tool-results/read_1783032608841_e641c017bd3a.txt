@@ -1,0 +1,1011 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect, useCallback } from 'react';
+     4→import { useForm } from 'react-hook-form';
+     5→import { zodResolver } from '@hookform/resolvers/zod';
+     6→import { z } from 'zod/v4';
+     7→import { Card, CardContent } from '@/components/ui/card';
+     8→import { Button } from '@/components/ui/button';
+     9→import { Input } from '@/components/ui/input';
+    10→import {
+    11→  Dialog,
+    12→  DialogContent,
+    13→  DialogHeader,
+    14→  DialogTitle,
+    15→  DialogFooter,
+    16→} from '@/components/ui/dialog';
+    17→import {
+    18→  AlertDialog,
+    19→  AlertDialogAction,
+    20→  AlertDialogCancel,
+    21→  AlertDialogContent,
+    22→  AlertDialogDescription,
+    23→  AlertDialogFooter,
+    24→  AlertDialogHeader,
+    25→  AlertDialogTitle,
+    26→  AlertDialogTrigger,
+    27→} from '@/components/ui/alert-dialog';
+    28→import {
+    29→  Table,
+    30→  TableBody,
+    31→  TableCell,
+    32→  TableHead,
+    33→  TableHeader,
+    34→  TableRow,
+    35→} from '@/components/ui/table';
+    36→import { Badge } from '@/components/ui/badge';
+    37→import { Label } from '@/components/ui/label';
+    38→import { Textarea } from '@/components/ui/textarea';
+    39→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+    40→import { Skeleton } from '@/components/ui/skeleton';
+    41→import { ScrollArea } from '@/components/ui/scroll-area';
+    42→import {
+    43→  Form,
+    44→  FormControl,
+    45→  FormField,
+    46→  FormItem,
+    47→  FormLabel,
+    48→  FormMessage,
+    49→} from '@/components/ui/form';
+    50→import {
+    51→  Plus,
+    52→  Search,
+    53→  Pencil,
+    54→  Trash2,
+    55→  History,
+    56→  Phone,
+    57→  Mail,
+    58→  MapPin,
+    59→  FileText,
+    60→} from 'lucide-react';
+    61→import { format } from 'date-fns';
+    62→import { fr } from 'date-fns/locale';
+    63→
+    64→// ─── Types ───────────────────────────────────────────────────────────────────
+    65→
+    66→interface Client {
+    67→  id: string;
+    68→  firstName: string;
+    69→  lastName: string;
+    70→  phone: string | null;
+    71→  email: string | null;
+    72→  address: string | null;
+    73→  remarks: string | null;
+    74→  createdAt: string;
+    75→}
+    76→
+    77→interface Appointment {
+    78→  id: string;
+    79→  date: string;
+    80→  serviceName: string;
+    81→  employeeName: string;
+    82→  status: 'PROGRAMME' | 'ANNULE' | 'TERMINE';
+    83→}
+    84→
+    85→interface Invoice {
+    86→  id: string;
+    87→  date: string;
+    88→  totalAmount: number;
+    89→  status: 'PAYEE' | 'NON_PAYEE' | 'PARTIELLEMENT_PAYEE';
+    90→  paidAmount: number;
+    91→}
+    92→
+    93→// ─── Zod Schema ──────────────────────────────────────────────────────────────
+    94→
+    95→const clientFormSchema = z.object({
+    96→  firstName: z.string().min(1, 'Le prénom est requis'),
+    97→  lastName: z.string().min(1, 'Le nom est requis'),
+    98→  phone: z.string().optional().or(z.literal('')),
+    99→  email: z
+   100→    .string()
+   101→    .optional()
+   102→    .or(z.literal(''))
+   103→    .refine(
+   104→      (val) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val),
+   105→      'Email invalide'
+   106→    ),
+   107→  address: z.string().optional().or(z.literal('')),
+   108→  remarks: z.string().optional().or(z.literal('')),
+   109→});
+   110→
+   111→type ClientFormValues = z.infer<typeof clientFormSchema>;
+   112→
+   113→// ─── Helpers ─────────────────────────────────────────────────────────────────
+   114→
+   115→function getAuthHeaders(): HeadersInit {
+   116→  const token = typeof window !== 'undefined' ? localStorage.getItem('ds_token') : null;
+   117→  return {
+   118→    'Content-Type': 'application/json',
+   119→    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+   120→  };
+   121→}
+   122→
+   123→function formatCurrency(amount: number): string {
+   124→  return new Intl.NumberFormat('fr-FR', {
+   125→    style: 'currency',
+   126→    currency: 'DZD',
+   127→    minimumFractionDigits: 2,
+   128→  }).format(amount);
+   129→}
+   130→
+   131→function formatDate(dateStr: string): string {
+   132→  try {
+   133→    return format(new Date(dateStr), 'dd MMM yyyy', { locale: fr });
+   134→  } catch {
+   135→    return dateStr;
+   136→  }
+   137→}
+   138→
+   139→// ─── Status Badges ───────────────────────────────────────────────────────────
+   140→
+   141→function AppointmentStatusBadge({ status }: { status: Appointment['status'] }) {
+   142→  const config: Record<
+   143→    Appointment['status'],
+   144→    { label: string; variant: 'default' | 'destructive' | 'secondary' | 'outline'; className?: string }
+   145→  > = {
+   146→    PROGRAMME: { label: 'Programmé', variant: 'default', className: 'bg-blue-100 text-blue-800 border-blue-200' },
+   147→    ANNULE: { label: 'Annulé', variant: 'destructive' },
+   148→    TERMINE: { label: 'Terminé', variant: 'secondary', className: 'bg-green-100 text-green-800 border-green-200' },
+   149→  };
+   150→  const { label, variant, className } = config[status];
+   151→  return (
+   152→    <Badge variant={variant} className={className}>
+   153→      {label}
+   154→    </Badge>
+   155→  );
+   156→}
+   157→
+   158→function InvoiceStatusBadge({ status }: { status: Invoice['status'] }) {
+   159→  const config: Record<
+   160→    Invoice['status'],
+   161→    { label: string; variant: 'default' | 'destructive' | 'secondary' | 'outline'; className?: string }
+   162→  > = {
+   163→    PAYEE: { label: 'Payée', variant: 'secondary', className: 'bg-green-100 text-green-800 border-green-200' },
+   164→    NON_PAYEE: { label: 'Non payée', variant: 'destructive' },
+   165→    PARTIELLEMENT_PAYEE: {
+   166→      label: 'Partiellement payée',
+   167→      variant: 'outline',
+   168→      className: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+   169→    },
+   170→  };
+   171→  const { label, variant, className } = config[status];
+   172→  return (
+   173→    <Badge variant={variant} className={className}>
+   174→      {label}
+   175→    </Badge>
+   176→  );
+   177→}
+   178→
+   179→// ─── Loading Skeletons ───────────────────────────────────────────────────────
+   180→
+   181→function TableSkeleton() {
+   182→  return (
+   183→    <div className="space-y-3">
+   184→      <div className="flex gap-4">
+   185→        {['w-48', 'w-36', 'w-40', 'w-64', 'w-32'].map((w, i) => (
+   186→          <Skeleton key={i} className={`h-4 ${w}`} />
+   187→        ))}
+   188→      </div>
+   189→      {Array.from({ length: 6 }).map((_, i) => (
+   190→        <div key={i} className="flex gap-4 items-center">
+   191→          <Skeleton className="h-10 w-48" />
+   192→          <Skeleton className="h-10 w-36" />
+   193→          <Skeleton className="h-10 w-40" />
+   194→          <Skeleton className="h-10 w-64" />
+   195→          <Skeleton className="h-10 w-32" />
+   196→        </div>
+   197→      ))}
+   198→    </div>
+   199→  );
+   200→}
+   201→
+   202→function CardSkeleton() {
+   203→  return (
+   204→    <div className="space-y-4">
+   205→      {Array.from({ length: 4 }).map((_, i) => (
+   206→        <Card key={i}>
+   207→          <CardContent className="p-4 space-y-3">
+   208→            <div className="flex items-center justify-between">
+   209→              <Skeleton className="h-5 w-40" />
+   210→              <Skeleton className="h-8 w-24" />
+   211→            </div>
+   212→            <div className="space-y-2">
+   213→              <Skeleton className="h-4 w-32" />
+   214→              <Skeleton className="h-4 w-44" />
+   215→            </div>
+   216→            <Skeleton className="h-4 w-full max-w-xs" />
+   217→          </CardContent>
+   218→        </Card>
+   219→      ))}
+   220→    </div>
+   221→  );
+   222→}
+   223→
+   224→function HistorySkeleton() {
+   225→  return (
+   226→    <div className="space-y-3 p-1">
+   227→      {Array.from({ length: 3 }).map((_, i) => (
+   228→        <div key={i} className="flex gap-4 items-center">
+   229→          <Skeleton className="h-9 w-24" />
+   230→          <Skeleton className="h-9 w-32" />
+   231→          <Skeleton className="h-9 w-24" />
+   232→          <Skeleton className="h-9 w-20" />
+   233→        </div>
+   234→      ))}
+   235→    </div>
+   236→  );
+   237→}
+   238→
+   239→// ─── Client Form Dialog ──────────────────────────────────────────────────────
+   240→
+   241→function ClientFormDialog({
+   242→  open,
+   243→  onOpenChange,
+   244→  client,
+   245→  onSaved,
+   246→}: {
+   247→  open: boolean;
+   248→  onOpenChange: (open: boolean) => void;
+   249→  client: Client | null;
+   250→  onSaved: () => void;
+   251→}) {
+   252→  const isEditing = !!client;
+   253→
+   254→  const form = useForm<ClientFormValues>({
+   255→    resolver: zodResolver(clientFormSchema),
+   256→    defaultValues: {
+   257→      firstName: client?.firstName ?? '',
+   258→      lastName: client?.lastName ?? '',
+   259→      phone: client?.phone ?? '',
+   260→      email: client?.email ?? '',
+   261→      address: client?.address ?? '',
+   262→      remarks: client?.remarks ?? '',
+   263→    },
+   264→  });
+   265→
+   266→  // Reset form when dialog opens with a different client
+   267→  useEffect(() => {
+   268→    if (open) {
+   269→      form.reset({
+   270→        firstName: client?.firstName ?? '',
+   271→        lastName: client?.lastName ?? '',
+   272→        phone: client?.phone ?? '',
+   273→        email: client?.email ?? '',
+   274→        address: client?.address ?? '',
+   275→        remarks: client?.remarks ?? '',
+   276→      });
+   277→    }
+   278→  }, [open, client, form]);
+   279→
+   280→  const [submitting, setSubmitting] = useState(false);
+   281→
+   282→  const onSubmit = async (values: ClientFormValues) => {
+   283→    setSubmitting(true);
+   284→    try {
+   285→      const payload: Record<string, string> = {
+   286→        firstName: values.firstName,
+   287→        lastName: values.lastName,
+   288→      };
+   289→      if (values.phone) payload.phone = values.phone;
+   290→      if (values.email) payload.email = values.email;
+   291→      if (values.address) payload.address = values.address;
+   292→      if (values.remarks) payload.remarks = values.remarks;
+   293→
+   294→      if (isEditing && client) {
+   295→        await fetch('/api/clients', {
+   296→          method: 'PUT',
+   297→          headers: getAuthHeaders(),
+   298→          body: JSON.stringify({ id: client.id, ...payload }),
+   299→        });
+   300→      } else {
+   301→        await fetch('/api/clients', {
+   302→          method: 'POST',
+   303→          headers: getAuthHeaders(),
+   304→          body: JSON.stringify(payload),
+   305→        });
+   306→      }
+   307→      onSaved();
+   308→      onOpenChange(false);
+   309→    } catch {
+   310→      // Error handled silently, could add toast
+   311→    } finally {
+   312→      setSubmitting(false);
+   313→    }
+   314→  };
+   315→
+   316→  return (
+   317→    <Dialog open={open} onOpenChange={onOpenChange}>
+   318→      <DialogContent className="sm:max-w-md">
+   319→        <DialogHeader>
+   320→          <DialogTitle>
+   321→            {isEditing ? 'Modifier le client' : 'Nouveau client'}
+   322→          </DialogTitle>
+   323→        </DialogHeader>
+   324→
+   325→        <Form {...form}>
+   326→          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+   327→            <div className="grid grid-cols-2 gap-4">
+   328→              <FormField
+   329→                control={form.control}
+   330→                name="firstName"
+   331→                render={({ field }) => (
+   332→                  <FormItem>
+   333→                    <FormLabel>Prénom</FormLabel>
+   334→                    <FormControl>
+   335→                      <Input placeholder="Prénom" {...field} />
+   336→                    </FormControl>
+   337→                    <FormMessage />
+   338→                  </FormItem>
+   339→                )}
+   340→              />
+   341→              <FormField
+   342→                control={form.control}
+   343→                name="lastName"
+   344→                render={({ field }) => (
+   345→                  <FormItem>
+   346→                    <FormLabel>Nom</FormLabel>
+   347→                    <FormControl>
+   348→                      <Input placeholder="Nom" {...field} />
+   349→                    </FormControl>
+   350→                    <FormMessage />
+   351→                  </FormItem>
+   352→                )}
+   353→              />
+   354→            </div>
+   355→
+   356→            <FormField
+   357→              control={form.control}
+   358→              name="phone"
+   359→              render={({ field }) => (
+   360→                <FormItem>
+   361→                  <FormLabel>Téléphone</FormLabel>
+   362→                  <FormControl>
+   363→                    <Input placeholder="0X XX XX XX XX" {...field} />
+   364→                  </FormControl>
+   365→                  <FormMessage />
+   366→                </FormItem>
+   367→              )}
+   368→            />
+   369→
+   370→            <FormField
+   371→              control={form.control}
+   372→              name="email"
+   373→              render={({ field }) => (
+   374→                <FormItem>
+   375→                  <FormLabel>Email</FormLabel>
+   376→                  <FormControl>
+   377→                    <Input type="email" placeholder="email@exemple.com" {...field} />
+   378→                  </FormControl>
+   379→                  <FormMessage />
+   380→                </FormItem>
+   381→              )}
+   382→            />
+   383→
+   384→            <FormField
+   385→              control={form.control}
+   386→              name="address"
+   387→              render={({ field }) => (
+   388→                <FormItem>
+   389→                  <FormLabel>Adresse</FormLabel>
+   390→                  <FormControl>
+   391→                    <Input placeholder="Adresse" {...field} />
+   392→                  </FormControl>
+   393→                  <FormMessage />
+   394→                </FormItem>
+   395→              )}
+   396→            />
+   397→
+   398→            <FormField
+   399→              control={form.control}
+   400→              name="remarks"
+   401→              render={({ field }) => (
+   402→                <FormItem>
+   403→                  <FormLabel>Remarques</FormLabel>
+   404→                  <FormControl>
+   405→                    <Textarea
+   406→                      placeholder="Notes ou remarques..."
+   407→                      className="resize-none"
+   408→                      rows={3}
+   409→                      {...field}
+   410→                    />
+   411→                  </FormControl>
+   412→                  <FormMessage />
+   413→                </FormItem>
+   414→              )}
+   415→            />
+   416→
+   417→            <DialogFooter className="pt-2">
+   418→              <Button
+   419→                type="button"
+   420→                variant="outline"
+   421→                onClick={() => onOpenChange(false)}
+   422→                disabled={submitting}
+   423→              >
+   424→                Annuler
+   425→              </Button>
+   426→              <Button type="submit" disabled={submitting}>
+   427→                {submitting ? (
+   428→                  <span className="flex items-center gap-2">
+   429→                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+   430→                    {isEditing ? 'Enregistrement...' : 'Création...'}
+   431→                  </span>
+   432→                ) : isEditing ? (
+   433→                  'Enregistrer'
+   434→                ) : (
+   435→                  'Créer le client'
+   436→                )}
+   437→              </Button>
+   438→            </DialogFooter>
+   439→          </form>
+   440→        </Form>
+   441→      </DialogContent>
+   442→    </Dialog>
+   443→  );
+   444→}
+   445→
+   446→// ─── Client History Dialog ───────────────────────────────────────────────────
+   447→
+   448→function ClientHistoryDialog({
+   449→  open,
+   450→  onOpenChange,
+   451→  client,
+   452→}: {
+   453→  open: boolean;
+   454→  onOpenChange: (open: boolean) => void;
+   455→  client: Client | null;
+   456→}) {
+   457→  const [appointments, setAppointments] = useState<Appointment[]>([]);
+   458→  const [invoices, setInvoices] = useState<Invoice[]>([]);
+   459→  const [loadingAppointments, setLoadingAppointments] = useState(true);
+   460→  const [loadingInvoices, setLoadingInvoices] = useState(true);
+   461→
+   462→  useEffect(() => {
+   463→    if (open && client) {
+   464→      fetch(`/api/clients/${client.id}/appointments`, { headers: getAuthHeaders() })
+   465→        .then((res) => res.json())
+   466→        .then((data) => setAppointments(Array.isArray(data) ? data : []))
+   467→        .catch(() => setAppointments([]))
+   468→        .finally(() => setLoadingAppointments(false));
+   469→
+   470→      fetch(`/api/clients/${client.id}/invoices`, { headers: getAuthHeaders() })
+   471→        .then((res) => res.json())
+   472→        .then((data) => setInvoices(Array.isArray(data) ? data : []))
+   473→        .catch(() => setInvoices([]))
+   474→        .finally(() => setLoadingInvoices(false));
+   475→    }
+   476→  }, [open, client]);
+   477→
+   478→  if (!client) return null;
+   479→
+   480→  return (
+   481→    <Dialog open={open} onOpenChange={onOpenChange}>
+   482→      <DialogContent className="sm:max-w-2xl">
+   483→        <DialogHeader>
+   484→          <DialogTitle>
+   485→            Historique — {client.firstName} {client.lastName}
+   486→          </DialogTitle>
+   487→        </DialogHeader>
+   488→
+   489→        <Tabs defaultValue="appointments" className="w-full">
+   490→          <TabsList className="w-full">
+   491→            <TabsTrigger value="appointments" className="flex-1">
+   492→              Rendez-vous
+   493→            </TabsTrigger>
+   494→            <TabsTrigger value="invoices" className="flex-1">
+   495→              Factures
+   496→            </TabsTrigger>
+   497→          </TabsList>
+   498→
+   499→          <TabsContent value="appointments">
+   500→            <ScrollArea className="max-h-96 overflow-y-auto">
+   501→              {loadingAppointments ? (
+   502→                <HistorySkeleton />
+   503→              ) : appointments.length === 0 ? (
+   504→                <div className="text-center py-8 text-muted-foreground text-sm">
+   505→                  Aucun rendez-vous trouvé
+   506→                </div>
+   507→              ) : (
+   508→                <Table>
+   509→                  <TableHeader>
+   510→                    <TableRow>
+   511→                      <TableHead>Date</TableHead>
+   512→                      <TableHead>Service</TableHead>
+   513→                      <TableHead>Employé</TableHead>
+   514→                      <TableHead>Statut</TableHead>
+   515→                    </TableRow>
+   516→                  </TableHeader>
+   517→                  <TableBody>
+   518→                    {appointments.map((appt) => (
+   519→                      <TableRow key={appt.id}>
+   520→                        <TableCell className="font-medium">
+   521→                          {formatDate(appt.date)}
+   522→                        </TableCell>
+   523→                        <TableCell>{appt.serviceName}</TableCell>
+   524→                        <TableCell>{appt.employeeName}</TableCell>
+   525→                        <TableCell>
+   526→                          <AppointmentStatusBadge status={appt.status} />
+   527→                        </TableCell>
+   528→                      </TableRow>
+   529→                    ))}
+   530→                  </TableBody>
+   531→                </Table>
+   532→              )}
+   533→            </ScrollArea>
+   534→          </TabsContent>
+   535→
+   536→          <TabsContent value="invoices">
+   537→            <ScrollArea className="max-h-96 overflow-y-auto">
+   538→              {loadingInvoices ? (
+   539→                <HistorySkeleton />
+   540→              ) : invoices.length === 0 ? (
+   541→                <div className="text-center py-8 text-muted-foreground text-sm">
+   542→                  Aucune facture trouvée
+   543→                </div>
+   544→              ) : (
+   545→                <Table>
+   546→                  <TableHeader>
+   547→                    <TableRow>
+   548→                      <TableHead>Date</TableHead>
+   549→                      <TableHead>Montant</TableHead>
+   550→                      <TableHead>Payé</TableHead>
+   551→                      <TableHead>Statut</TableHead>
+   552→                    </TableRow>
+   553→                  </TableHeader>
+   554→                  <TableBody>
+   555→                    {invoices.map((inv) => (
+   556→                      <TableRow key={inv.id}>
+   557→                        <TableCell className="font-medium">
+   558→                          {formatDate(inv.date)}
+   559→                        </TableCell>
+   560→                        <TableCell>{formatCurrency(inv.totalAmount)}</TableCell>
+   561→                        <TableCell>{formatCurrency(inv.paidAmount)}</TableCell>
+   562→                        <TableCell>
+   563→                          <InvoiceStatusBadge status={inv.status} />
+   564→                        </TableCell>
+   565→                      </TableRow>
+   566→                    ))}
+   567→                  </TableBody>
+   568→                </Table>
+   569→              )}
+   570→            </ScrollArea>
+   571→          </TabsContent>
+   572→        </Tabs>
+   573→      </DialogContent>
+   574→    </Dialog>
+   575→  );
+   576→}
+   577→
+   578→// ─── Desktop Table View ──────────────────────────────────────────────────────
+   579→
+   580→function ClientTable({
+   581→  clients,
+   582→  onEdit,
+   583→  onDelete,
+   584→  onHistory,
+   585→}: {
+   586→  clients: Client[];
+   587→  onEdit: (client: Client) => void;
+   588→  onDelete: (client: Client) => void;
+   589→  onHistory: (client: Client) => void;
+   590→}) {
+   591→  if (clients.length === 0) {
+   592→    return (
+   593→      <Card>
+   594→        <CardContent className="py-12">
+   595→          <div className="text-center text-muted-foreground">
+   596→            <FileText className="h-10 w-10 mx-auto mb-3 opacity-40" />
+   597→            <p className="text-sm font-medium">Aucun client trouvé</p>
+   598→            <p className="text-xs mt-1">
+   599→              Commencez par ajouter un nouveau client
+   600→            </p>
+   601→          </div>
+   602→        </CardContent>
+   603→      </Card>
+   604→    );
+   605→  }
+   606→
+   607→  return (
+   608→    <Card>
+   609→      <CardContent className="p-0">
+   610→        <div className="overflow-x-auto">
+   611→          <Table>
+   612→            <TableHeader>
+   613→              <TableRow>
+   614→                <TableHead className="pl-4">Nom</TableHead>
+   615→                <TableHead>Téléphone</TableHead>
+   616→                <TableHead>Email</TableHead>
+   617→                <TableHead>Remarques</TableHead>
+   618→                <TableHead className="text-right pr-4">Actions</TableHead>
+   619→              </TableRow>
+   620→            </TableHeader>
+   621→            <TableBody>
+   622→              {clients.map((client) => (
+   623→                <TableRow key={client.id}>
+   624→                  <TableCell className="pl-4">
+   625→                    <span className="font-medium">
+   626→                      {client.firstName} {client.lastName}
+   627→                    </span>
+   628→                  </TableCell>
+   629→                  <TableCell>
+   630→                    {client.phone && (
+   631→                      <span className="flex items-center gap-1.5 text-muted-foreground">
+   632→                        <Phone className="h-3.5 w-3.5" />
+   633→                        {client.phone}
+   634→                      </span>
+   635→                    )}
+   636→                  </TableCell>
+   637→                  <TableCell>
+   638→                    {client.email && (
+   639→                      <span className="flex items-center gap-1.5 text-muted-foreground">
+   640→                        <Mail className="h-3.5 w-3.5" />
+   641→                        {client.email}
+   642→                      </span>
+   643→                    )}
+   644→                  </TableCell>
+   645→                  <TableCell className="max-w-[200px]">
+   646→                    {client.remarks ? (
+   647→                      <span className="text-sm text-muted-foreground truncate block max-w-[200px]">
+   648→                        {client.remarks}
+   649→                      </span>
+   650→                    ) : (
+   651→                      <span className="text-muted-foreground/40 text-xs">—</span>
+   652→                    )}
+   653→                  </TableCell>
+   654→                  <TableCell className="text-right pr-4">
+   655→                    <div className="flex items-center justify-end gap-1">
+   656→                      <Button
+   657→                        variant="ghost"
+   658→                        size="icon"
+   659→                        className="h-8 w-8"
+   660→                        onClick={() => onHistory(client)}
+   661→                        title="Historique"
+   662→                      >
+   663→                        <History className="h-4 w-4" />
+   664→                      </Button>
+   665→                      <Button
+   666→                        variant="ghost"
+   667→                        size="icon"
+   668→                        className="h-8 w-8"
+   669→                        onClick={() => onEdit(client)}
+   670→                        title="Modifier"
+   671→                      >
+   672→                        <Pencil className="h-4 w-4" />
+   673→                      </Button>
+   674→                      <Button
+   675→                        variant="ghost"
+   676→                        size="icon"
+   677→                        className="h-8 w-8 text-destructive hover:text-destructive"
+   678→                        onClick={() => onDelete(client)}
+   679→                        title="Supprimer"
+   680→                      >
+   681→                        <Trash2 className="h-4 w-4" />
+   682→                      </Button>
+   683→                    </div>
+   684→                  </TableCell>
+   685→                </TableRow>
+   686→              ))}
+   687→            </TableBody>
+   688→          </Table>
+   689→        </div>
+   690→      </CardContent>
+   691→    </Card>
+   692→  );
+   693→}
+   694→
+   695→// ─── Mobile Card View ────────────────────────────────────────────────────────
+   696→
+   697→function ClientCardList({
+   698→  clients,
+   699→  onEdit,
+   700→  onDelete,
+   701→  onHistory,
+   702→}: {
+   703→  clients: Client[];
+   704→  onEdit: (client: Client) => void;
+   705→  onDelete: (client: Client) => void;
+   706→  onHistory: (client: Client) => void;
+   707→}) {
+   708→  if (clients.length === 0) {
+   709→    return (
+   710→      <Card>
+   711→        <CardContent className="py-12">
+   712→          <div className="text-center text-muted-foreground">
+   713→            <FileText className="h-10 w-10 mx-auto mb-3 opacity-40" />
+   714→            <p className="text-sm font-medium">Aucun client trouvé</p>
+   715→            <p className="text-xs mt-1">
+   716→              Commencez par ajouter un nouveau client
+   717→            </p>
+   718→          </div>
+   719→        </CardContent>
+   720→      </Card>
+   721→    );
+   722→  }
+   723→
+   724→  return (
+   725→    <div className="space-y-3">
+   726→      {clients.map((client) => (
+   727→        <Card key={client.id} className="overflow-hidden">
+   728→          <CardContent className="p-4">
+   729→            {/* Header row */}
+   730→            <div className="flex items-start justify-between gap-2 mb-3">
+   731→              <div>
+   732→                <p className="font-semibold text-sm">
+   733→                  {client.firstName} {client.lastName}
+   734→                </p>
+   735→                {client.remarks && (
+   736→                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+   737→                    {client.remarks}
+   738→                  </p>
+   739→                )}
+   740→              </div>
+   741→              <div className="flex items-center gap-1 shrink-0">
+   742→                <Button
+   743→                  variant="ghost"
+   744→                  size="icon"
+   745→                  className="h-8 w-8"
+   746→                  onClick={() => onHistory(client)}
+   747→                  title="Historique"
+   748→                >
+   749→                  <History className="h-4 w-4" />
+   750→                </Button>
+   751→                <Button
+   752→                  variant="ghost"
+   753→                  size="icon"
+   754→                  className="h-8 w-8"
+   755→                  onClick={() => onEdit(client)}
+   756→                  title="Modifier"
+   757→                >
+   758→                  <Pencil className="h-4 w-4" />
+   759→                </Button>
+   760→                <Button
+   761→                  variant="ghost"
+   762→                  size="icon"
+   763→                  className="h-8 w-8 text-destructive hover:text-destructive"
+   764→                  onClick={() => onDelete(client)}
+   765→                  title="Supprimer"
+   766→                >
+   767→                  <Trash2 className="h-4 w-4" />
+   768→                </Button>
+   769→              </div>
+   770→            </div>
+   771→
+   772→            {/* Contact details */}
+   773→            <div className="flex flex-col gap-1.5 text-sm text-muted-foreground">
+   774→              {client.phone && (
+   775→                <span className="flex items-center gap-2">
+   776→                  <Phone className="h-3.5 w-3.5 shrink-0" />
+   777→                  {client.phone}
+   778→                </span>
+   779→              )}
+   780→              {client.email && (
+   781→                <span className="flex items-center gap-2">
+   782→                  <Mail className="h-3.5 w-3.5 shrink-0" />
+   783→                  <span className="truncate">{client.email}</span>
+   784→                </span>
+   785→              )}
+   786→              {client.address && (
+   787→                <span className="flex items-center gap-2">
+   788→                  <MapPin className="h-3.5 w-3.5 shrink-0" />
+   789→                  <span className="truncate">{client.address}</span>
+   790→                </span>
+   791→              )}
+   792→            </div>
+   793→          </CardContent>
+   794→        </Card>
+   795→      ))}
+   796→    </div>
+   797→  );
+   798→}
+   799→
+   800→// ─── Main Clients Module ─────────────────────────────────────────────────────
+   801→
+   802→export function ClientsModule() {
+   803→  const [clients, setClients] = useState<Client[]>([]);
+   804→  const [loading, setLoading] = useState(true);
+   805→  const [searchQuery, setSearchQuery] = useState('');
+   806→  const [debouncedQuery, setDebouncedQuery] = useState('');
+   807→
+   808→  // Dialogs
+   809→  const [formDialogOpen, setFormDialogOpen] = useState(false);
+   810→  const [editingClient, setEditingClient] = useState<Client | null>(null);
+   811→
+   812→  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+   813→  const [historyClient, setHistoryClient] = useState<Client | null>(null);
+   814→
+   815→  const [deletingClient, setDeletingClient] = useState<Client | null>(null);
+   816→  const [deleting, setDeleting] = useState(false);
+   817→
+   818→  // ── Debounced search ──
+   819→  useEffect(() => {
+   820→    const timer = setTimeout(() => {
+   821→      setDebouncedQuery(searchQuery);
+   822→    }, 300);
+   823→    return () => clearTimeout(timer);
+   824→  }, [searchQuery]);
+   825→
+   826→  // ── Fetch clients ──
+   827→  const fetchClients = useCallback(async () => {
+   828→    setLoading(true);
+   829→    try {
+   830→      const params = debouncedQuery ? `?q=${encodeURIComponent(debouncedQuery)}` : '';
+   831→      const res = await fetch(`/api/clients${params}`, {
+   832→        headers: getAuthHeaders(),
+   833→      });
+   834→      const data = await res.json();
+   835→      setClients(Array.isArray(data) ? data : []);
+   836→    } catch {
+   837→      setClients([]);
+   838→    } finally {
+   839→      setLoading(false);
+   840→    }
+   841→  }, [debouncedQuery]);
+   842→
+   843→  useEffect(() => {
+   844→    fetchClients();
+   845→  }, [fetchClients]);
+   846→
+   847→  // ── Handlers ──
+   848→  const handleCreateNew = () => {
+   849→    setEditingClient(null);
+   850→    setFormDialogOpen(true);
+   851→  };
+   852→
+   853→  const handleEdit = (client: Client) => {
+   854→    setEditingClient(client);
+   855→    setFormDialogOpen(true);
+   856→  };
+   857→
+   858→  const handleSaved = () => {
+   859→    fetchClients();
+   860→  };
+   861→
+   862→  const handleHistory = (client: Client) => {
+   863→    setHistoryClient(client);
+   864→    setHistoryDialogOpen(true);
+   865→  };
+   866→
+   867→  const handleDelete = async () => {
+   868→    if (!deletingClient) return;
+   869→    setDeleting(true);
+   870→    try {
+   871→      await fetch('/api/clients', {
+   872→        method: 'DELETE',
+   873→        headers: getAuthHeaders(),
+   874→        body: JSON.stringify({ id: deletingClient.id }),
+   875→      });
+   876→      setClients((prev) => prev.filter((c) => c.id !== deletingClient.id));
+   877→    } catch {
+   878→      // Error handled silently
+   879→    } finally {
+   880→      setDeleting(false);
+   881→      setDeletingClient(null);
+   882→    }
+   883→  };
+   884→
+   885→  return (
+   886→    <div className="space-y-6">
+   887→      {/* ── Header ── */}
+   888→      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+   889→        <div>
+   890→          <h1 className="text-2xl font-bold tracking-tight">
+   891→            Gestion des clients
+   892→          </h1>
+   893→          <p className="text-sm text-muted-foreground mt-1">
+   894→            {clients.length} client{clients.length !== 1 ? 's' : ''} au total
+   895→          </p>
+   896→        </div>
+   897→        <Button onClick={handleCreateNew} className="w-full sm:w-auto">
+   898→          <Plus className="h-4 w-4 mr-2" />
+   899→          Nouveau client
+   900→        </Button>
+   901→      </div>
+   902→
+   903→      {/* ── Search Bar ── */}
+   904→      <div className="relative max-w-md">
+   905→        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   906→        <Input
+   907→          placeholder="Rechercher par nom ou téléphone..."
+   908→          value={searchQuery}
+   909→          onChange={(e) => setSearchQuery(e.target.value)}
+   910→          className="pl-9"
+   911→        />
+   912→      </div>
+   913→
+   914→      {/* ── Content ── */}
+   915→      {loading ? (
+   916→        <>
+   917→          {/* Desktop skeleton */}
+   918→          <div className="hidden md:block">
+   919→            <Card>
+   920→              <CardContent className="p-4">
+   921→                <TableSkeleton />
+   922→              </CardContent>
+   923→            </Card>
+   924→          </div>
+   925→          {/* Mobile skeleton */}
+   926→          <div className="md:hidden">
+   927→            <CardSkeleton />
+   928→          </div>
+   929→        </>
+   930→      ) : (
+   931→        <>
+   932→          {/* Desktop table (hidden on mobile) */}
+   933→          <div className="hidden md:block">
+   934→            <ClientTable
+   935→              clients={clients}
+   936→              onEdit={handleEdit}
+   937→              onDelete={setDeletingClient}
+   938→              onHistory={handleHistory}
+   939→            />
+   940→          </div>
+   941→          {/* Mobile cards (hidden on desktop) */}
+   942→          <div className="md:hidden">
+   943→            <ClientCardList
+   944→              clients={clients}
+   945→              onEdit={handleEdit}
+   946→              onDelete={setDeletingClient}
+   947→              onHistory={handleHistory}
+   948→            />
+   949→          </div>
+   950→        </>
+   951→      )}
+   952→
+   953→      {/* ── Create / Edit Dialog ── */}
+   954→      <ClientFormDialog
+   955→        open={formDialogOpen}
+   956→        onOpenChange={setFormDialogOpen}
+   957→        client={editingClient}
+   958→        onSaved={handleSaved}
+   959→      />
+   960→
+   961→      {/* ── History Dialog ── */}
+   962→      <ClientHistoryDialog
+   963→        key={historyClient?.id}
+   964→        open={historyDialogOpen}
+   965→        onOpenChange={setHistoryDialogOpen}
+   966→        client={historyClient}
+   967→      />
+   968→
+   969→      {/* ── Delete Confirmation ── */}
+   970→      <AlertDialog
+   971→        open={!!deletingClient}
+   972→        onOpenChange={(open) => {
+   973→          if (!open) setDeletingClient(null);
+   974→        }}
+   975→      >
+   976→        <AlertDialogContent>
+   977→          <AlertDialogHeader>
+   978→            <AlertDialogTitle>Supprimer ce client ?</AlertDialogTitle>
+   979→            <AlertDialogDescription>
+   980→              Cette action est irréversible. Le client{' '}
+   981→              <span className="font-semibold text-foreground">
+   982→                {deletingClient?.firstName} {deletingClient?.lastName}
+   983→              </span>{' '}
+   984→              sera définitivement supprimé, ainsi que toutes les données
+   985→              associées.
+   986→            </AlertDialogDescription>
+   987→          </AlertDialogHeader>
+   988→          <AlertDialogFooter>
+   989→            <AlertDialogCancel disabled={deleting}>
+   990→              Annuler
+   991→            </AlertDialogCancel>
+   992→            <AlertDialogAction
+   993→              onClick={handleDelete}
+   994→              disabled={deleting}
+   995→              className="bg-destructive text-white hover:bg-destructive/90"
+   996→            >
+   997→              {deleting ? (
+   998→                <span className="flex items-center gap-2">
+   999→                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+  1000→                  Suppression...
+  1001→                </span>
+  1002→              ) : (
+  1003→                'Supprimer'
+  1004→              )}
+  1005→            </AlertDialogAction>
+  1006→          </AlertDialogFooter>
+  1007→        </AlertDialogContent>
+  1008→      </AlertDialog>
+  1009→    </div>
+  1010→  );
+  1011→}

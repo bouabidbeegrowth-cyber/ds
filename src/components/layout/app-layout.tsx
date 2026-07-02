@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useAuthStore } from '@/store/auth-store';
 import {
   LayoutDashboard, Users, Sparkles, Calendar, FileText,
-  ShoppingCart, Receipt, UserCog, LogOut, Menu, X, ChevronRight
+  ShoppingCart, Receipt, UserCog, LogOut, Menu, X, ChevronRight, Shield
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -18,18 +18,21 @@ import { InvoicesModule } from '@/components/modules/invoices/invoices-module';
 import { PurchasesModule } from '@/components/modules/purchases/purchases-module';
 import { ExpensesModule } from '@/components/modules/expenses/expenses-module';
 import { UsersModule } from '@/components/modules/users/users-module';
+import { RolesModule } from '@/components/modules/roles/roles-module';
+import type { ModuleKey } from '@/lib/permissions';
 
-type Page = 'dashboard' | 'clients' | 'services' | 'appointments' | 'invoices' | 'purchases' | 'expenses' | 'users';
+type Page = 'dashboard' | 'clients' | 'services' | 'appointments' | 'invoices' | 'purchases' | 'expenses' | 'users' | 'roles';
 
-const NAV_ITEMS: { id: Page; label: string; icon: React.ElementType; adminOnly?: boolean }[] = [
-  { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard },
-  { id: 'clients', label: 'Clients', icon: Users },
-  { id: 'services', label: 'Services', icon: Sparkles },
-  { id: 'appointments', label: 'Rendez-vous', icon: Calendar },
-  { id: 'invoices', label: 'Factures', icon: FileText },
-  { id: 'purchases', label: 'Achats', icon: ShoppingCart },
-  { id: 'expenses', label: 'Dépenses', icon: Receipt },
-  { id: 'users', label: 'Utilisateurs', icon: UserCog, adminOnly: true },
+const NAV_ITEMS: { id: Page; label: string; icon: React.ElementType; module: ModuleKey }[] = [
+  { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard, module: 'dashboard' },
+  { id: 'clients', label: 'Clients', icon: Users, module: 'clients' },
+  { id: 'services', label: 'Services', icon: Sparkles, module: 'services' },
+  { id: 'appointments', label: 'Rendez-vous', icon: Calendar, module: 'appointments' },
+  { id: 'invoices', label: 'Factures', icon: FileText, module: 'invoices' },
+  { id: 'purchases', label: 'Achats', icon: ShoppingCart, module: 'purchases' },
+  { id: 'expenses', label: 'Dépenses', icon: Receipt, module: 'expenses' },
+  { id: 'users', label: 'Utilisateurs', icon: UserCog, module: 'users' },
+  { id: 'roles', label: 'Rôles', icon: Shield, module: 'users' },
 ];
 
 export function AppLayout() {
@@ -37,7 +40,27 @@ export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout } = useAuthStore();
 
-  const isAdmin = user?.role === 'ADMIN';
+  const permissions = user?.permissions;
+
+  // Filter nav items based on user permissions
+  const visibleNavItems = NAV_ITEMS.filter((item) => {
+    // For the "roles" page, need full access to users module
+    if (item.id === 'roles') {
+      return permissions?.users === 'full';
+    }
+    // For all other modules, need at least read access
+    const level = permissions?.[item.module];
+    return level && level !== 'none';
+  });
+
+  // Find the first accessible page for redirect
+  const getAccessiblePage = (): Page => {
+    if (visibleNavItems.length > 0) {
+      const first = visibleNavItems[0];
+      return first.id;
+    }
+    return 'dashboard';
+  };
 
   const handleLogout = () => {
     logout();
@@ -48,7 +71,26 @@ export function AppLayout() {
     setSidebarOpen(false);
   };
 
+  // Check if current page is accessible
+  const isCurrentPageAccessible = () => {
+    if (!user?.permissions) return false;
+    const navItem = NAV_ITEMS.find((n) => n.id === currentPage);
+    if (!navItem) return false;
+    if (navItem.id === 'roles') {
+      return user.permissions.users === 'full';
+    }
+    const level = user.permissions[navItem.module];
+    return level && level !== 'none';
+  };
+
   const renderPage = () => {
+    // If the current page is not accessible, redirect to the first accessible one
+    if (!isCurrentPageAccessible()) {
+      const accessible = getAccessiblePage();
+      setCurrentPage(accessible);
+      return null;
+    }
+
     switch (currentPage) {
       case 'dashboard': return <DashboardModule />;
       case 'clients': return <ClientsModule />;
@@ -57,12 +99,13 @@ export function AppLayout() {
       case 'invoices': return <InvoicesModule />;
       case 'purchases': return <PurchasesModule />;
       case 'expenses': return <ExpensesModule />;
-      case 'users': return isAdmin ? <UsersModule /> : null;
+      case 'users': return <UsersModule />;
+      case 'roles': return <RolesModule />;
       default: return <DashboardModule />;
     }
   };
 
-  const currentNav = NAV_ITEMS.find(n => n.id === currentPage);
+  const currentNav = NAV_ITEMS.find((n) => n.id === currentPage);
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-background">
@@ -104,8 +147,7 @@ export function AppLayout() {
           {/* Navigation */}
           <ScrollArea className="flex-1 px-3 py-4">
             <nav className="space-y-1">
-              {NAV_ITEMS.map((item) => {
-                if (item.adminOnly && !isAdmin) return null;
+              {visibleNavItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = currentPage === item.id;
                 return (
@@ -140,8 +182,8 @@ export function AppLayout() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground truncate">{user?.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {isAdmin ? 'Administrateur' : 'Employé'}
+                <p className="text-xs text-muted-foreground truncate">
+                  {user?.roleName || 'Chargement...'}
                 </p>
               </div>
             </div>
@@ -170,7 +212,7 @@ export function AppLayout() {
             <Menu className="h-5 w-5" />
           </Button>
           <div className="flex items-center gap-2">
-            {currentNav && (
+            {currentNav && isCurrentPageAccessible() && (
               <>
                 <currentNav.icon className="h-5 w-5 text-primary" />
                 <h2 className="text-lg font-semibold text-foreground">{currentNav.label}</h2>
@@ -188,7 +230,7 @@ export function AppLayout() {
         </main>
 
         {/* Footer */}
-        <footer className="border-t border-border px-4 py-3 text-center text-xs text-muted-foreground bg-card">
+        <footer className="border-t border-border px-4 py-3 text-center text-xs text-muted-foreground bg-card mt-auto">
           © {new Date().getFullYear()} DS Esthétique — Gestion du centre de beauté
         </footer>
       </div>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '@/store/auth-store';
+import { canWrite, canDelete } from '@/lib/permissions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -240,7 +241,7 @@ export function PurchasesModule() {
             </p>
           </div>
         </div>
-        {isAdmin && (
+        {canWrite(user?.permissions?.purchases) && (
           <Button onClick={openCreateDialog} className="shrink-0">
             <Plus className="h-4 w-4 mr-2" />
             Nouvel achat
@@ -308,7 +309,7 @@ export function PurchasesModule() {
                 ? 'Aucun achat enregistré pour ce mois. Essayez un autre mois ou créez un nouvel achat.'
                 : 'Commencez par ajouter votre premier achat.'}
             </p>
-            {isAdmin && (
+            {canWrite(user?.permissions?.purchases) && (
               <Button onClick={openCreateDialog} className="mt-4">
                 <Plus className="h-4 w-4 mr-2" />
                 Nouvel achat
@@ -331,7 +332,7 @@ export function PurchasesModule() {
                     <TableHead className="text-right">Montant</TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead className="hidden lg:table-cell">Description</TableHead>
-                    {isAdmin && <TableHead className="text-right pr-4">Actions</TableHead>}
+                    {(canWrite(user?.permissions?.purchases) || canDelete(user?.permissions?.purchases)) && <TableHead className="text-right pr-4">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -368,9 +369,10 @@ export function PurchasesModule() {
                           <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      {isAdmin && (
+                      {canWrite(user?.permissions?.purchases) && (
                         <TableCell className="text-right pr-4">
                           <div className="flex items-center justify-end gap-1">
+                            {canWrite(user?.permissions?.purchases) && (
                             <Button
                               variant="ghost"
                               size="icon"
@@ -380,6 +382,8 @@ export function PurchasesModule() {
                               <Pencil className="h-4 w-4" />
                               <span className="sr-only">Modifier</span>
                             </Button>
+                            )}
+                            {canDelete(user?.permissions?.purchases) && (
                             <Button
                               variant="ghost"
                               size="icon"
@@ -389,6 +393,7 @@ export function PurchasesModule() {
                               <Trash2 className="h-4 w-4" />
                               <span className="sr-only">Supprimer</span>
                             </Button>
+                            )}
                           </div>
                         </TableCell>
                       )}
@@ -422,7 +427,7 @@ export function PurchasesModule() {
                             {purchase.label}
                           </span>
                         </div>
-                        {isAdmin && (
+                        {canWrite(user?.permissions?.purchases) && (
                           <div className="flex items-center gap-1 shrink-0">
                             <Button
                               variant="ghost"
@@ -433,6 +438,7 @@ export function PurchasesModule() {
                               <Pencil className="h-3.5 w-3.5" />
                               <span className="sr-only">Modifier</span>
                             </Button>
+                            {canDelete(user?.permissions?.purchases) && (
                             <Button
                               variant="ghost"
                               size="icon"
@@ -442,6 +448,7 @@ export function PurchasesModule() {
                               <Trash2 className="h-3.5 w-3.5" />
                               <span className="sr-only">Supprimer</span>
                             </Button>
+                            )}
                           </div>
                         )}
                       </div>

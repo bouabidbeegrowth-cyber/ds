@@ -1,7 +1,7 @@
 #!/bin/bash
 cd /home/z/my-project
 while true; do
-  bun run dev >> /home/z/my-project/dev.log 2>&1
-  echo "Server died, restarting in 2s..." >> /home/z/my-project/dev.log
+  NEXT_TELEMETRY_DISABLED=1 npx next dev --port 3000 2>&1
+  echo "Server died, restarting in 2s..." 
   sleep 2
 done

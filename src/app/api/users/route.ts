@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { verifyAuth } from '@/lib/auth';
+import { verifyAuth, requirePermission } from '@/lib/auth';
 
 async function hashPassword(password: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -15,12 +15,23 @@ async function hashPassword(password: string): Promise<string> {
 export async function GET(req: NextRequest) {
   const auth = await verifyAuth(req);
   if ('error' in auth) return auth.error;
-  if (auth.user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
-  }
+  const permCheck = requirePermission(auth.user, 'users', 'read');
+  if (permCheck) return permCheck;
 
   const users = await db.user.findMany({
-    select: { id: true, username: true, name: true, role: true, active: true, createdAt: true, updatedAt: true },
+    select: {
+      id: true,
+      username: true,
+      name: true,
+      roleId: true,
+      role: true,
+      active: true,
+      createdAt: true,
+      updatedAt: true,
+      roleRelation: {
+        select: { id: true, name: true },
+      },
+    },
     orderBy: { createdAt: 'desc' },
   });
 
@@ -30,20 +41,24 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const auth = await verifyAuth(req);
   if ('error' in auth) return auth.error;
-  if (auth.user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
-  }
+  const permCheck = requirePermission(auth.user, 'users', 'write');
+  if (permCheck) return permCheck;
 
   const body = await req.json();
-  const { username, password, name, role } = body;
+  const { username, password, name, roleId } = body;
 
   if (!username || !password || !name) {
     return NextResponse.json({ error: 'Nom d\'utilisateur, mot de passe et nom sont requis' }, { status: 400 });
   }
 
-  const validRoles = ['ADMIN', 'EMPLOYEE'];
-  if (role && !validRoles.includes(role)) {
-    return NextResponse.json({ error: 'Rôle invalide' }, { status: 400 });
+  if (!roleId) {
+    return NextResponse.json({ error: 'Le rôle est requis' }, { status: 400 });
+  }
+
+  // Validate role exists
+  const roleExists = await db.role.findUnique({ where: { id: roleId } });
+  if (!roleExists) {
+    return NextResponse.json({ error: 'Rôle introuvable' }, { status: 400 });
   }
 
   // Check if username already exists
@@ -59,9 +74,19 @@ export async function POST(req: NextRequest) {
       username,
       password: hashedPassword,
       name,
-      role: role || 'EMPLOYEE',
+      roleId,
     },
-    select: { id: true, username: true, name: true, role: true, active: true, createdAt: true, updatedAt: true },
+    select: {
+      id: true,
+      username: true,
+      name: true,
+      roleId: true,
+      role: true,
+      active: true,
+      createdAt: true,
+      updatedAt: true,
+      roleRelation: { select: { id: true, name: true } },
+    },
   });
 
   return NextResponse.json(user, { status: 201 });
@@ -70,9 +95,8 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   const auth = await verifyAuth(req);
   if ('error' in auth) return auth.error;
-  if (auth.user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
-  }
+  const permCheck = requirePermission(auth.user, 'users', 'write');
+  if (permCheck) return permCheck;
 
   const body = await req.json();
   const { id, ...data } = body;
@@ -81,26 +105,38 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'ID est requis' }, { status: 400 });
   }
 
-  if (data.role !== undefined) {
-    const validRoles = ['ADMIN', 'EMPLOYEE'];
-    if (!validRoles.includes(data.role)) {
-      return NextResponse.json({ error: 'Rôle invalide' }, { status: 400 });
-    }
-  }
-
   const updateData: Record<string, unknown> = {};
 
   if (data.name !== undefined) updateData.name = data.name;
-  if (data.role !== undefined) updateData.role = data.role;
   if (data.active !== undefined) updateData.active = Boolean(data.active);
   if (data.password) {
     updateData.password = await hashPassword(data.password);
   }
 
+  if (data.roleId !== undefined) {
+    if (data.roleId) {
+      const roleExists = await db.role.findUnique({ where: { id: data.roleId } });
+      if (!roleExists) {
+        return NextResponse.json({ error: 'Rôle introuvable' }, { status: 400 });
+      }
+    }
+    updateData.roleId = data.roleId;
+  }
+
   const user = await db.user.update({
     where: { id },
     data: updateData,
-    select: { id: true, username: true, name: true, role: true, active: true, createdAt: true, updatedAt: true },
+    select: {
+      id: true,
+      username: true,
+      name: true,
+      roleId: true,
+      role: true,
+      active: true,
+      createdAt: true,
+      updatedAt: true,
+      roleRelation: { select: { id: true, name: true } },
+    },
   });
 
   return NextResponse.json(user);
@@ -109,9 +145,8 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const auth = await verifyAuth(req);
   if ('error' in auth) return auth.error;
-  if (auth.user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Accès refusé' }, { status: 403 });
-  }
+  const permCheck = requirePermission(auth.user, 'users', 'delete');
+  if (permCheck) return permCheck;
 
   const body = await req.json();
   const { id } = body;
@@ -124,7 +159,17 @@ export async function DELETE(req: NextRequest) {
   const user = await db.user.update({
     where: { id },
     data: { active: false },
-    select: { id: true, username: true, name: true, role: true, active: true, createdAt: true, updatedAt: true },
+    select: {
+      id: true,
+      username: true,
+      name: true,
+      roleId: true,
+      role: true,
+      active: true,
+      createdAt: true,
+      updatedAt: true,
+      roleRelation: { select: { id: true, name: true } },
+    },
   });
 
   return NextResponse.json(user);

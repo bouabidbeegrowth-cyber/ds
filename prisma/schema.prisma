@@ -7,17 +7,30 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  permissions String   @default("{}") // JSON: { clients: "full", services: "read", ... }
+  isSystem    Boolean  @default(false) // System roles (Administrateur, Employé) cannot be deleted
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users User[]
+}
+
 model User {
   id          String        @id @default(cuid())
   username    String        @unique
   password    String
   name        String
-  role        String        @default("EMPLOYEE") // ADMIN or EMPLOYEE
+  roleId      String?
+  role        String        @default("EMPLOYEE") // DEPRECATED: kept for migration, use roleId instead
   active      Boolean       @default(true)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  appointments Appointment[]
+  roleRelation  Role?        @relation(fields: [roleId], references: [id])
+  appointments  Appointment[]
 }
 
 model Client {

@@ -32,6 +32,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { useAuthStore } from '@/store/auth-store';
+import { canWrite } from '@/lib/permissions';
 import {
   FileText,
   Search,
@@ -102,6 +104,7 @@ const STATUS_LABELS: Record<string, string> = {
 // ── Component ──────────────────────────────────────────────────────────────
 
 export function InvoicesModule() {
+  const { user } = useAuthStore();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -489,6 +492,7 @@ export function InvoicesModule() {
                           {formatDate(invoice.createdAt)}
                         </TableCell>
                         <TableCell className="px-4 text-right">
+                          {canWrite(user?.permissions?.invoices) && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -500,6 +504,7 @@ export function InvoicesModule() {
                               Voir / modifier
                             </span>
                           </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     );

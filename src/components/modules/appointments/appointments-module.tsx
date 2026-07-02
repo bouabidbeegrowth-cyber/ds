@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { toast } from 'sonner';
+import { useAuthStore } from '@/store/auth-store';
+import { canWrite, canDelete } from '@/lib/permissions';
 import {
   Plus, Calendar, Clock, User, UserCog, FileText,
   Pencil, Trash2, Check, X, AlertCircle, Sparkles,
@@ -201,6 +203,7 @@ function LoadingSkeleton() {
 // ── Main Component ─────────────────────────────────────────────────────────────
 
 export function AppointmentsModule() {
+  const { user } = useAuthStore();
   // Data state
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -530,10 +533,12 @@ export function AppointmentsModule() {
             </p>
           )}
         </div>
+        {canWrite(user?.permissions?.appointments) && (
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4 mr-2" />
           Nouveau rendez-vous
         </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-6">
@@ -663,7 +668,7 @@ export function AppointmentsModule() {
                                   <FileText className="h-3 w-3 mr-1" />
                                   Voir
                                 </Button>
-                              ) : (
+                              ) : canWrite(user?.permissions?.appointments) ? (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -673,20 +678,22 @@ export function AppointmentsModule() {
                                   <Pencil className="h-3 w-3 mr-1" />
                                   Ajouter
                                 </Button>
-                              )}
+                              ) : null}
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex items-center justify-end gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() => handleOpenNotes(apt)}
-                                  title="Modifier les notes"
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </Button>
-                                {apt.status === 'PROGRAMME' && (
+                              {canWrite(user?.permissions?.appointments) && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => handleOpenNotes(apt)}
+                                title="Modifier les notes"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              )}
+                                {apt.status === 'PROGRAMME' && canDelete(user?.permissions?.appointments) && (
                                   <Button
                                     variant="ghost"
                                     size="icon"
@@ -743,6 +750,7 @@ export function AppointmentsModule() {
                       )}
                     </div>
                     <div className="flex items-center gap-2 mt-3 pt-3 border-t">
+                      {canWrite(user?.permissions?.appointments) && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -752,7 +760,8 @@ export function AppointmentsModule() {
                         <Pencil className="h-3 w-3 mr-1" />
                         Notes
                       </Button>
-                      {apt.status === 'PROGRAMME' && (
+                      )}
+                      {apt.status === 'PROGRAMME' && canDelete(user?.permissions?.appointments) && (
                         <Button
                           variant="outline"
                           size="sm"

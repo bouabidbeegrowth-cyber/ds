@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '@/store/auth-store';
+import { canWrite, canDelete } from '@/lib/permissions';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -297,7 +298,7 @@ export function ServicesModule() {
             {services.length} service{services.length > 1 ? 's' : ''} au total
           </p>
         </div>
-        {isAdmin && (
+        {canWrite(user?.permissions?.services) && (
           <Button onClick={openCreateDialog} className="gap-2">
             <Plus className="size-4" />
             Nouveau service
@@ -358,7 +359,7 @@ export function ServicesModule() {
 
                 {/* Actions */}
                 <div className="flex items-center justify-between border-t border-border/50 pt-3">
-                  {isAdmin && (
+                  {canWrite(user?.permissions?.services) && (
                     <div className="flex items-center gap-2">
                       <Label
                         htmlFor={`toggle-${service.id}`}
@@ -374,7 +375,7 @@ export function ServicesModule() {
                     </div>
                   )}
                   <div className="ml-auto flex items-center gap-1">
-                    {isAdmin && (
+                    {canWrite(user?.permissions?.services) && (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -385,7 +386,7 @@ export function ServicesModule() {
                         <span className="sr-only">Modifier {service.name}</span>
                       </Button>
                     )}
-                    {isAdmin && (
+                    {canDelete(user?.permissions?.services) && (
                       <Button
                         variant="ghost"
                         size="icon"

@@ -1,10 +1,14 @@
 import { create } from 'zustand';
+import type { Permissions } from '@/lib/permissions';
 
 interface User {
   id: string;
   username: string;
   name: string;
-  role: 'ADMIN' | 'EMPLOYEE';
+  roleId: string | null;
+  roleName: string;
+  permissions: Permissions;
+  isSystemAdmin: boolean;
 }
 
 interface AuthState {
@@ -13,6 +17,7 @@ interface AuthState {
   isAuthenticated: boolean;
   login: (user: User, token: string) => void;
   logout: () => void;
+  updatePermissions: (permissions: Permissions, roleName: string) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -32,6 +37,20 @@ export const useAuthStore = create<AuthState>((set) => ({
       localStorage.removeItem('ds_token');
     }
     set({ user: null, token: null, isAuthenticated: false });
+  },
+  updatePermissions: (permissions, roleName) => {
+    set((state) => ({
+      user: state.user ? { ...state.user, permissions, roleName } : null,
+    }));
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('ds_user');
+      if (stored) {
+        const user = JSON.parse(stored);
+        user.permissions = permissions;
+        user.roleName = roleName;
+        localStorage.setItem('ds_user', JSON.stringify(user));
+      }
+    }
   },
 }));
 

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { verifyAuth } from '@/lib/auth';
+import { verifyAuth, requirePermission } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
   const auth = await verifyAuth(req);
   if ('error' in auth) return auth.error;
+  const permCheck = requirePermission(auth.user, 'appointments', 'read');
+  if (permCheck) return permCheck;
 
   const { searchParams } = new URL(req.url);
   const date = searchParams.get('date');
@@ -29,7 +31,7 @@ export async function GET(req: NextRequest) {
     include: {
       client: true,
       services: { include: { service: true }, orderBy: { createdAt: 'asc' } },
-      employee: { select: { id: true, name: true, role: true } },
+      employee: { select: { id: true, name: true } },
     },
     orderBy: { date: 'desc' },
   });
@@ -40,6 +42,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const auth = await verifyAuth(req);
   if ('error' in auth) return auth.error;
+  const permCheck = requirePermission(auth.user, 'appointments', 'write');
+  if (permCheck) return permCheck;
 
   const body = await req.json();
   const { clientId, serviceIds, employeeId, date, notes } = body;
@@ -61,7 +65,7 @@ export async function POST(req: NextRequest) {
     include: {
       client: true,
       services: { include: { service: true }, orderBy: { createdAt: 'asc' } },
-      employee: { select: { id: true, name: true, role: true } },
+      employee: { select: { id: true, name: true } },
     },
   });
 
@@ -71,6 +75,8 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   const auth = await verifyAuth(req);
   if ('error' in auth) return auth.error;
+  const permCheck = requirePermission(auth.user, 'appointments', 'write');
+  if (permCheck) return permCheck;
 
   const body = await req.json();
   const { id, ...data } = body;
@@ -119,7 +125,7 @@ export async function PUT(req: NextRequest) {
     include: {
       client: true,
       services: { include: { service: true }, orderBy: { createdAt: 'asc' } },
-      employee: { select: { id: true, name: true, role: true } },
+      employee: { select: { id: true, name: true } },
     },
   });
 
@@ -129,6 +135,8 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const auth = await verifyAuth(req);
   if ('error' in auth) return auth.error;
+  const permCheck = requirePermission(auth.user, 'appointments', 'delete');
+  if (permCheck) return permCheck;
 
   const body = await req.json();
   const { id } = body;
@@ -147,7 +155,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: 'Seuls les rendez-vous programmés peuvent être supprimés' }, { status: 400 });
   }
 
-  await db.appointment.delete({ where: { id } }); // Cascade deletes AppointmentService rows
+  await db.appointment.delete({ where: { id } });
 
   return NextResponse.json({ success: true });
 }
