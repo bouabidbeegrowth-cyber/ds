@@ -1,0 +1,103 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String        @id @default(cuid())
+  username    String        @unique
+  password    String
+  name        String
+  role        String        @default("EMPLOYEE") // ADMIN or EMPLOYEE
+  active      Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  appointments Appointment[]
+}
+
+model Client {
+  id         String   @id @default(cuid())
+  firstName  String
+  lastName   String
+  phone      String?
+  email      String?
+  address    String?
+  remarks    String?  // allergies, preferences
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  appointments Appointment[]
+  invoices     Invoice[]
+}
+
+model Service {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  price       Float
+  duration    Int      // in minutes
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  appointments Appointment[]
+}
+
+model Appointment {
+  id          String   @id @default(cuid())
+  clientId    String
+  serviceId   String
+  employeeId  String
+  date        DateTime
+  status      String   @default("PROGRAMME") // PROGRAMME, ANNULE, TERMINE
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  client   Client  @relation(fields: [clientId], references: [id])
+  service  Service @relation(fields: [serviceId], references: [id])
+  employee User    @relation(fields: [employeeId], references: [id])
+
+  invoice Invoice?
+}
+
+model Invoice {
+  id              String   @id @default(cuid())
+  appointmentId   String   @unique
+  clientId        String
+  amount          Float
+  status          String   @default("NON_PAYEE") // PAYEE, NON_PAYEE, PARTIELLEMENT_PAYEE
+  paidAmount      Float    @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id])
+  client      Client      @relation(fields: [clientId], references: [id])
+}
+
+model Purchase {
+  id          String   @id @default(cuid())
+  label       String
+  supplier    String?
+  amount      Float
+  date        DateTime
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  label       String
+  category    String   // LOYER, ELECTRICITE, SALAIRES, FOURNITURES, AUTRE
+  amount      Float
+  date        DateTime
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
