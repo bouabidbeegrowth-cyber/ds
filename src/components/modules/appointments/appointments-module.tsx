@@ -6,7 +6,7 @@ import { fr } from 'date-fns/locale';
 import { toast } from 'sonner';
 import {
   Plus, Calendar, Clock, User, UserCog, FileText,
-  Pencil, Trash2, Check, X, AlertCircle,
+  Pencil, Trash2, Check, X, AlertCircle, Sparkles,
 } from 'lucide-react';
 
 import { Card, CardContent } from '@/components/ui/card';
@@ -16,6 +16,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Separator } from '@/components/ui/separator';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
@@ -31,6 +33,7 @@ import {
 } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Calendar as CalendarComponent } from '@/components/ui/calendar';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -57,16 +60,21 @@ interface Employee {
 
 type AppointmentStatus = 'PROGRAMME' | 'ANNULE' | 'TERMINE';
 
+interface AppointmentService {
+  id: string;
+  serviceId: string;
+  service: Service;
+}
+
 interface Appointment {
   id: string;
   clientId: string;
-  serviceId: string;
   employeeId: string;
   date: string;
   status: AppointmentStatus;
   notes: string | null;
   client: Client;
-  service: Service;
+  services: AppointmentService[];
   employee: Employee;
 }
 
@@ -100,6 +108,17 @@ function toDateString(d: Date): string {
 
 function toLocaleDateString(d: Date): string {
   return d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
+}
+
+function formatPrice(n: number): string {
+  return n.toLocaleString('fr-DZ') + ' DA';
+}
+
+function formatDuration(mins: number): string {
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m > 0 ? `${h}h ${m}min` : `${h}h`;
 }
 
 const STATUS_LABELS: Record<AppointmentStatus, string> = {
@@ -140,10 +159,21 @@ function statusDotColor(statuses: AppointmentStatus[]): string {
     if (unique[0] === 'ANNULE') return '#ef4444';
     if (unique[0] === 'TERMINE') return '#10b981';
   }
-  // Mixed appointments
   if (statuses.includes('PROGRAMME')) return '#3b82f6';
   if (statuses.includes('TERMINE')) return '#10b981';
   return '#ef4444';
+}
+
+function getServiceNames(apt: Appointment): string {
+  return apt.services.map((as) => as.service.name).join(', ');
+}
+
+function getTotalPrice(apt: Appointment): number {
+  return apt.services.reduce((sum, as) => sum + as.service.price, 0);
+}
+
+function getTotalDuration(services: Service[]): number {
+  return services.reduce((sum, s) => sum + s.duration, 0);
 }
 
 // ── Loading Skeleton ───────────────────────────────────────────────────────────
@@ -187,7 +217,7 @@ export function AppointmentsModule() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState({
     clientId: '',
-    serviceId: '',
+    serviceIds: [] as string[],
     employeeId: '',
     date: '',
     time: '',
@@ -206,6 +236,32 @@ export function AppointmentsModule() {
   const [deleteTarget, setDeleteTarget] = useState<Appointment | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // ── Selected services helpers (for create form) ────────────────────────────
+
+  const selectedServices = useMemo(
+    () => services.filter((s) => createForm.serviceIds.includes(s.id)),
+    [services, createForm.serviceIds],
+  );
+
+  const selectedTotalPrice = useMemo(
+    () => selectedServices.reduce((sum, s) => sum + s.price, 0),
+    [selectedServices],
+  );
+
+  const selectedTotalDuration = useMemo(
+    () => selectedServices.reduce((sum, s) => sum + s.duration, 0),
+    [selectedServices],
+  );
+
+  const toggleServiceId = (serviceId: string) => {
+    setCreateForm((f) => {
+      const ids = f.serviceIds.includes(serviceId)
+        ? f.serviceIds.filter((id) => id !== serviceId)
+        : [...f.serviceIds, serviceId];
+      return { ...f, serviceIds: ids };
+    });
+  };
+
   // ── Month appointments (for calendar dots) ─────────────────────────────────
 
   const [monthAppointments, setMonthAppointments] = useState<Appointment[]>([]);
@@ -216,7 +272,6 @@ export function AppointmentsModule() {
       const m = month.getMonth();
       const start = new Date(year, m, 1);
       const end = new Date(year, m + 1, 0, 23, 59, 59);
-      // Fetch a wide range: start of month
       const res = await fetch(
         `/api/appointments?date=${toDateString(start)}`,
         { headers: authHeaders() }
@@ -250,7 +305,6 @@ export function AppointmentsModule() {
     return map;
   }, [monthAppointments]);
 
-  // Generate CSS for calendar dots
   const dotStyles = useMemo(() => {
     let css = '';
     Object.entries(dotMap).forEach(([dateStr, statuses]) => {
@@ -315,7 +369,7 @@ export function AppointmentsModule() {
   // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handleCreate = async () => {
-    if (!createForm.clientId || !createForm.serviceId || !createForm.employeeId || !createForm.date || !createForm.time) {
+    if (!createForm.clientId || createForm.serviceIds.length === 0 || !createForm.employeeId || !createForm.date || !createForm.time) {
       toast.error('Veuillez remplir tous les champs obligatoires');
       return;
     }
@@ -327,7 +381,7 @@ export function AppointmentsModule() {
         headers: authHeaders(),
         body: JSON.stringify({
           clientId: createForm.clientId,
-          serviceId: createForm.serviceId,
+          serviceIds: createForm.serviceIds,
           employeeId: createForm.employeeId,
           date: isoDate,
           notes: createForm.notes || undefined,
@@ -340,7 +394,7 @@ export function AppointmentsModule() {
       }
       toast.success('Rendez-vous créé avec succès');
       setCreateOpen(false);
-      setCreateForm({ clientId: '', serviceId: '', employeeId: '', date: '', time: '', notes: '' });
+      setCreateForm({ clientId: '', serviceIds: [], employeeId: '', date: '', time: '', notes: '' });
       fetchAppointments();
       fetchMonthAppointments(currentMonth);
     } catch {
@@ -554,7 +608,7 @@ export function AppointmentsModule() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Client</TableHead>
-                          <TableHead>Service</TableHead>
+                          <TableHead>Services</TableHead>
                           <TableHead>Employé</TableHead>
                           <TableHead>Date / Heure</TableHead>
                           <TableHead>Statut</TableHead>
@@ -571,7 +625,15 @@ export function AppointmentsModule() {
                                 {apt.client.firstName} {apt.client.lastName}
                               </span>
                             </TableCell>
-                            <TableCell>{apt.service.name}</TableCell>
+                            <TableCell>
+                              <div className="flex flex-wrap gap-1 max-w-[220px]">
+                                {apt.services.map((as) => (
+                                  <Badge key={as.id} variant="secondary" className="text-xs font-normal">
+                                    {as.service.name}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </TableCell>
                             <TableCell>
                               <span className="flex items-center gap-1.5">
                                 <UserCog className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -654,7 +716,13 @@ export function AppointmentsModule() {
                         <p className="font-semibold text-sm truncate">
                           {apt.client.firstName} {apt.client.lastName}
                         </p>
-                        <p className="text-sm text-muted-foreground">{apt.service.name}</p>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {apt.services.map((as) => (
+                            <Badge key={as.id} variant="secondary" className="text-xs font-normal">
+                              {as.service.name}
+                            </Badge>
+                          ))}
+                        </div>
                       </div>
                       <StatusSelect appointment={apt} onChange={handleStatusChange} />
                     </div>
@@ -705,12 +773,15 @@ export function AppointmentsModule() {
       </div>
 
       {/* ── Create Dialog ────────────────────────────────────────────────────── */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog open={createOpen} onOpenChange={(open) => {
+        setCreateOpen(open);
+        if (!open) setCreateForm({ clientId: '', serviceIds: [], employeeId: '', date: '', time: '', notes: '' });
+      }}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Nouveau rendez-vous</DialogTitle>
             <DialogDescription>
-              Remplissez les informations pour créer un rendez-vous.
+              Sélectionnez un ou plusieurs services pour le rendez-vous.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
@@ -734,24 +805,42 @@ export function AppointmentsModule() {
               </Select>
             </div>
 
-            {/* Service */}
+            {/* Services (multi-select) */}
             <div className="space-y-2">
-              <Label htmlFor="create-service">Service *</Label>
-              <Select
-                value={createForm.serviceId}
-                onValueChange={(v) => setCreateForm((f) => ({ ...f, serviceId: v }))}
-              >
-                <SelectTrigger id="create-service" className="w-full">
-                  <SelectValue placeholder="Sélectionner un service" />
-                </SelectTrigger>
-                <SelectContent>
-                  {services.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name} — {s.price.toFixed(2)} €
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Services *</Label>
+              <div className="border rounded-lg p-3 space-y-1 max-h-48 overflow-y-auto">
+                {services.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-3">
+                    Aucun service actif. Créez d&apos;abord un service.
+                  </p>
+                ) : (
+                  services.map((s) => (
+                    <label
+                      key={s.id}
+                      className="flex items-center gap-3 rounded-md px-2 py-1.5 cursor-pointer hover:bg-accent transition-colors"
+                    >
+                      <Checkbox
+                        checked={createForm.serviceIds.includes(s.id)}
+                        onCheckedChange={() => toggleServiceId(s.id)}
+                      />
+                      <span className="flex-1 text-sm">{s.name}</span>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {formatPrice(s.price)}
+                      </span>
+                    </label>
+                  ))
+                )}
+              </div>
+              {selectedServices.length > 0 && (
+                <div className="flex items-center justify-between text-sm px-1 pt-1">
+                  <span className="text-muted-foreground">
+                    {selectedServices.length} service{selectedServices.length > 1 ? 's' : ''} sélectionné{selectedServices.length > 1 ? 's' : ''}
+                  </span>
+                  <span className="font-medium text-primary">
+                    {formatPrice(selectedTotalPrice)} · {formatDuration(selectedTotalDuration)}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Employee */}
@@ -838,7 +927,10 @@ export function AppointmentsModule() {
             <DialogDescription>
               {notesTarget && (
                 <>
-                  Rendez-vous de {notesTarget.client.firstName} {notesTarget.client.lastName} — {notesTarget.service.name}
+                  RDV de {notesTarget.client.firstName} {notesTarget.client.lastName}
+                  {notesTarget.services.length > 0 && (
+                    <> — {getServiceNames(notesTarget)}</>
+                  )}
                 </>
               )}
             </DialogDescription>
@@ -886,7 +978,8 @@ export function AppointmentsModule() {
                   <strong>
                     {deleteTarget.client.firstName} {deleteTarget.client.lastName}
                   </strong>{' '}
-                  du {formatDateFr(deleteTarget.date)} ? Cette action est irréversible.
+                  ({getServiceNames(deleteTarget)})
+                  {' '}du {formatDateFr(deleteTarget.date)} ? Cette action est irréversible.
                 </>
               )}
             </AlertDialogDescription>

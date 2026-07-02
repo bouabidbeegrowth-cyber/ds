@@ -9,59 +9,44 @@ export async function GET(req: NextRequest) {
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
-  // Run all queries in parallel
+  // ── Parallel queries ────────────────────────────────────────────────────────
   const [
     totalClients,
     todayAppointments,
     paidInvoices,
     currentMonthExpenses,
-    topServices,
     recentAppointments,
     monthlyRevenueInvoices,
     monthlyExpensesData,
   ] = await Promise.all([
-    // Total clients
     db.client.count(),
 
-    // Today's appointments
     db.appointment.count({
       where: { date: { gte: todayStart, lte: todayEnd } },
     }),
 
-    // Total revenue (paid invoices)
     db.invoice.aggregate({
       where: { status: 'PAYEE' },
       _sum: { paidAmount: true },
     }),
 
-    // Current month expenses
     db.expense.aggregate({
-      where: { date: { gte: currentMonthStart, lte: currentMonthEnd } },
+      where: { date: { gte: new Date(now.getFullYear(), now.getMonth(), 1), lte: currentMonthEnd } },
       _sum: { amount: true },
     }),
 
-    // Top 5 services by appointment count
-    db.appointment.groupBy({
-      by: ['serviceId'],
-      _count: { id: true },
-      orderBy: { _count: { id: 'desc' } },
-      take: 5,
-    }),
-
-    // Last 10 appointments with client and service info
+    // Last 10 appointments with services
     db.appointment.findMany({
       take: 10,
       orderBy: { date: 'desc' },
       include: {
         client: { select: { id: true, firstName: true, lastName: true } },
-        service: { select: { id: true, name: true, price: true } },
+        services: { include: { service: { select: { id: true, name: true, price: true } } } },
       },
     }),
 
-    // Monthly revenue - last 6 months (all invoices, use paidAmount for PAYEE)
     db.invoice.findMany({
       where: {
         status: 'PAYEE',
@@ -73,7 +58,6 @@ export async function GET(req: NextRequest) {
       select: { createdAt: true, paidAmount: true },
     }),
 
-    // Monthly expenses - last 6 months
     db.expense.findMany({
       where: {
         date: {
@@ -88,33 +72,39 @@ export async function GET(req: NextRequest) {
   const totalRevenue = paidInvoices._sum.paidAmount || 0;
   const totalExpenses = currentMonthExpenses._sum.amount || 0;
 
-  // Resolve top services with names
-  const serviceIds = topServices.map((s) => s.serviceId);
-  const services = await db.service.findMany({
-    where: { id: { in: serviceIds } },
-    select: { id: true, name: true },
+  // ── Top 5 services via junction table ───────────────────────────────────────
+  const topServicesRaw = await db.appointmentService.groupBy({
+    by: ['serviceId'],
+    _count: { id: true },
+    orderBy: { _count: { id: 'desc' } },
+    take: 5,
   });
+
+  const serviceIds = topServicesRaw.map((s) => s.serviceId);
+  const services = serviceIds.length > 0
+    ? await db.service.findMany({ where: { id: { in: serviceIds } }, select: { id: true, name: true } })
+    : [];
   const serviceMap = new Map(services.map((s) => [s.id, s.name]));
-  const topServicesResult = topServices.map((s) => ({
+  const topServices = topServicesRaw.map((s) => ({
     serviceName: serviceMap.get(s.serviceId) || 'Inconnu',
     count: s._count.id,
   }));
 
-  // Monthly revenue data
+  // ── Monthly revenue ────────────────────────────────────────────────────────
   const monthlyRevenueMap = new Map<string, number>();
   for (const inv of monthlyRevenueInvoices) {
     const key = `${inv.createdAt.getFullYear()}-${String(inv.createdAt.getMonth() + 1).padStart(2, '0')}`;
     monthlyRevenueMap.set(key, (monthlyRevenueMap.get(key) || 0) + inv.paidAmount);
   }
 
-  // Monthly expenses data
+  // ── Monthly expenses ───────────────────────────────────────────────────────
   const monthlyExpensesMap = new Map<string, number>();
   for (const exp of monthlyExpensesData) {
     const key = `${exp.date.getFullYear()}-${String(exp.date.getMonth() + 1).padStart(2, '0')}`;
     monthlyExpensesMap.set(key, (monthlyExpensesMap.get(key) || 0) + exp.amount);
   }
 
-  // Build last 6 months arrays
+  // ── Build last 6 months arrays ─────────────────────────────────────────────
   const monthlyRevenue: { month: string; revenue: number }[] = [];
   const monthlyExpenses: { month: string; expenses: number }[] = [];
 
@@ -131,7 +121,7 @@ export async function GET(req: NextRequest) {
     totalRevenue,
     totalExpenses,
     netProfit: totalRevenue - totalExpenses,
-    topServices: topServicesResult,
+    topServices,
     recentAppointments,
     monthlyRevenue,
     monthlyExpenses,

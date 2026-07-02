@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
       client: true,
       appointment: {
         include: {
-          service: true,
+          services: { include: { service: { select: { id: true, name: true, price: true } } } },
         },
       },
     },
@@ -62,7 +62,7 @@ export async function PUT(req: NextRequest) {
       client: true,
       appointment: {
         include: {
-          service: true,
+          services: { include: { service: { select: { id: true, name: true, price: true } } } },
         },
       },
     },

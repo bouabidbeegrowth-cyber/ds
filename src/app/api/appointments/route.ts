@@ -20,23 +20,15 @@ export async function GET(req: NextRequest) {
     where.date = { gte: start, lte: end };
   }
 
-  if (status) {
-    where.status = status;
-  }
-
-  if (clientId) {
-    where.clientId = clientId;
-  }
-
-  if (employeeId) {
-    where.employeeId = employeeId;
-  }
+  if (status) where.status = status;
+  if (clientId) where.clientId = clientId;
+  if (employeeId) where.employeeId = employeeId;
 
   const appointments = await db.appointment.findMany({
     where,
     include: {
       client: true,
-      service: true,
+      services: { include: { service: true }, orderBy: { createdAt: 'asc' } },
       employee: { select: { id: true, name: true, role: true } },
     },
     orderBy: { date: 'desc' },
@@ -50,23 +42,25 @@ export async function POST(req: NextRequest) {
   if ('error' in auth) return auth.error;
 
   const body = await req.json();
-  const { clientId, serviceId, employeeId, date, notes } = body;
+  const { clientId, serviceIds, employeeId, date, notes } = body;
 
-  if (!clientId || !serviceId || !employeeId || !date) {
-    return NextResponse.json({ error: 'Client, service, employé et date sont requis' }, { status: 400 });
+  if (!clientId || !serviceIds?.length || !employeeId || !date) {
+    return NextResponse.json({ error: 'Client, au moins un service, employé et date sont requis' }, { status: 400 });
   }
 
   const appointment = await db.appointment.create({
     data: {
       clientId,
-      serviceId,
       employeeId,
       date: new Date(date),
       notes: notes || null,
+      services: {
+        create: serviceIds.map((sid: string) => ({ serviceId: sid })),
+      },
     },
     include: {
       client: true,
-      service: true,
+      services: { include: { service: true }, orderBy: { createdAt: 'asc' } },
       employee: { select: { id: true, name: true, role: true } },
     },
   });
@@ -85,26 +79,26 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'ID est requis' }, { status: 400 });
   }
 
-  // If status is changing to TERMINE, check if invoice already exists
+  // If status is changing to TERMINE, auto-generate invoice
   if (data.status === 'TERMINE') {
-    const existingInvoice = await db.invoice.findUnique({
-      where: { appointmentId: id },
-    });
+    const existingInvoice = await db.invoice.findUnique({ where: { appointmentId: id } });
 
     if (!existingInvoice) {
-      // Get the appointment with service price
       const appointment = await db.appointment.findUnique({
         where: { id },
-        include: { service: true },
+        include: { services: { include: { service: true } } },
       });
 
       if (appointment) {
-        // Create invoice automatically
+        const totalAmount = appointment.services.reduce(
+          (sum, as) => sum + as.service.price,
+          0
+        );
         await db.invoice.create({
           data: {
             appointmentId: id,
             clientId: appointment.clientId,
-            amount: appointment.service.price,
+            amount: totalAmount,
             status: 'NON_PAYEE',
             paidAmount: 0,
           },
@@ -119,13 +113,12 @@ export async function PUT(req: NextRequest) {
       ...(data.status !== undefined && { status: data.status }),
       ...(data.notes !== undefined && { notes: data.notes || null }),
       ...(data.clientId !== undefined && { clientId: data.clientId }),
-      ...(data.serviceId !== undefined && { serviceId: data.serviceId }),
       ...(data.employeeId !== undefined && { employeeId: data.employeeId }),
       ...(data.date !== undefined && { date: new Date(data.date) }),
     },
     include: {
       client: true,
-      service: true,
+      services: { include: { service: true }, orderBy: { createdAt: 'asc' } },
       employee: { select: { id: true, name: true, role: true } },
     },
   });
@@ -144,9 +137,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: 'ID est requis' }, { status: 400 });
   }
 
-  const appointment = await db.appointment.findUnique({
-    where: { id },
-  });
+  const appointment = await db.appointment.findUnique({ where: { id } });
 
   if (!appointment) {
     return NextResponse.json({ error: 'Rendez-vous introuvable' }, { status: 404 });
@@ -156,7 +147,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: 'Seuls les rendez-vous programmés peuvent être supprimés' }, { status: 400 });
   }
 
-  await db.appointment.delete({ where: { id } });
+  await db.appointment.delete({ where: { id } }); // Cascade deletes AppointmentService rows
 
   return NextResponse.json({ success: true });
 }

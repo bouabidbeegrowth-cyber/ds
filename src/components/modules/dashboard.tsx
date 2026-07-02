@@ -32,7 +32,7 @@ interface DashboardData {
   recentAppointments: {
     id: string;
     client: { firstName: string; lastName: string };
-    service: { name: string };
+    services: { service: { name: string; price: number } }[];
     date: string;
     status: string;
   }[];
@@ -484,7 +484,7 @@ export function DashboardModule() {
                         {apt.client.firstName} {apt.client.lastName}
                       </TableCell>
                       <TableCell className="px-6 text-muted-foreground">
-                        {apt.service.name}
+                        {apt.services?.map((as: { service: { name: string } }) => as.service.name).join(', ') || '—'}
                       </TableCell>
                       <TableCell className="px-6 text-muted-foreground">
                         {formatDate(apt.date)}

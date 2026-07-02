@@ -1,0 +1,965 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect, useCallback, useMemo } from 'react';
+     4→import { format } from 'date-fns';
+     5→import { fr } from 'date-fns/locale';
+     6→import { toast } from 'sonner';
+     7→import {
+     8→  Plus, Calendar, Clock, User, UserCog, FileText,
+     9→  Pencil, Trash2, Check, X, AlertCircle,
+    10→} from 'lucide-react';
+    11→
+    12→import { Card, CardContent } from '@/components/ui/card';
+    13→import { Button } from '@/components/ui/button';
+    14→import { Input } from '@/components/ui/input';
+    15→import { Label } from '@/components/ui/label';
+    16→import { Textarea } from '@/components/ui/textarea';
+    17→import { Badge } from '@/components/ui/badge';
+    18→import { Skeleton } from '@/components/ui/skeleton';
+    19→import {
+    20→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    21→} from '@/components/ui/select';
+    22→import {
+    23→  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+    24→} from '@/components/ui/dialog';
+    25→import {
+    26→  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+    27→  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+    28→} from '@/components/ui/alert-dialog';
+    29→import {
+    30→  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+    31→} from '@/components/ui/table';
+    32→import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+    33→import { Calendar as CalendarComponent } from '@/components/ui/calendar';
+    34→
+    35→// ── Types ──────────────────────────────────────────────────────────────────────
+    36→
+    37→interface Client {
+    38→  id: string;
+    39→  firstName: string;
+    40→  lastName: string;
+    41→}
+    42→
+    43→interface Service {
+    44→  id: string;
+    45→  name: string;
+    46→  price: number;
+    47→  duration: number;
+    48→  active: boolean;
+    49→}
+    50→
+    51→interface Employee {
+    52→  id: string;
+    53→  name: string;
+    54→  role: string;
+    55→  active: boolean;
+    56→}
+    57→
+    58→type AppointmentStatus = 'PROGRAMME' | 'ANNULE' | 'TERMINE';
+    59→
+    60→interface Appointment {
+    61→  id: string;
+    62→  clientId: string;
+    63→  serviceId: string;
+    64→  employeeId: string;
+    65→  date: string;
+    66→  status: AppointmentStatus;
+    67→  notes: string | null;
+    68→  client: Client;
+    69→  service: Service;
+    70→  employee: Employee;
+    71→}
+    72→
+    73→// ── Helpers ────────────────────────────────────────────────────────────────────
+    74→
+    75→function getToken(): string {
+    76→  if (typeof window === 'undefined') return '';
+    77→  return localStorage.getItem('ds_token') || '';
+    78→}
+    79→
+    80→function authHeaders(): HeadersInit {
+    81→  return {
+    82→    'Content-Type': 'application/json',
+    83→    Authorization: `Bearer ${getToken()}`,
+    84→  };
+    85→}
+    86→
+    87→function formatDateFr(dateStr: string): string {
+    88→  return new Date(dateStr).toLocaleDateString('fr-FR', {
+    89→    day: 'numeric',
+    90→    month: 'long',
+    91→    year: 'numeric',
+    92→    hour: '2-digit',
+    93→    minute: '2-digit',
+    94→  });
+    95→}
+    96→
+    97→function toDateString(d: Date): string {
+    98→  return format(d, 'yyyy-MM-dd');
+    99→}
+   100→
+   101→function toLocaleDateString(d: Date): string {
+   102→  return d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' });
+   103→}
+   104→
+   105→const STATUS_LABELS: Record<AppointmentStatus, string> = {
+   106→  PROGRAMME: 'Programmé',
+   107→  ANNULE: 'Annulé',
+   108→  TERMINE: 'Terminé',
+   109→};
+   110→
+   111→function statusBadgeClass(status: AppointmentStatus): string {
+   112→  switch (status) {
+   113→    case 'PROGRAMME':
+   114→      return 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border-blue-200 dark:border-blue-800';
+   115→    case 'ANNULE':
+   116→      return '';
+   117→    case 'TERMINE':
+   118→      return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
+   119→    default:
+   120→      return '';
+   121→  }
+   122→}
+   123→
+   124→function statusBadgeVariant(status: AppointmentStatus): 'default' | 'destructive' | 'secondary' | 'outline' {
+   125→  switch (status) {
+   126→    case 'ANNULE':
+   127→      return 'destructive';
+   128→    case 'TERMINE':
+   129→      return 'outline';
+   130→    default:
+   131→      return 'secondary';
+   132→  }
+   133→}
+   134→
+   135→function statusDotColor(statuses: AppointmentStatus[]): string {
+   136→  if (statuses.length === 0) return 'transparent';
+   137→  const unique = [...new Set(statuses)];
+   138→  if (unique.length === 1) {
+   139→    if (unique[0] === 'PROGRAMME') return '#3b82f6';
+   140→    if (unique[0] === 'ANNULE') return '#ef4444';
+   141→    if (unique[0] === 'TERMINE') return '#10b981';
+   142→  }
+   143→  // Mixed appointments
+   144→  if (statuses.includes('PROGRAMME')) return '#3b82f6';
+   145→  if (statuses.includes('TERMINE')) return '#10b981';
+   146→  return '#ef4444';
+   147→}
+   148→
+   149→// ── Loading Skeleton ───────────────────────────────────────────────────────────
+   150→
+   151→function LoadingSkeleton() {
+   152→  return (
+   153→    <div className="space-y-4">
+   154→      <div className="flex items-center justify-between">
+   155→        <Skeleton className="h-8 w-64" />
+   156→        <Skeleton className="h-10 w-48" />
+   157→      </div>
+   158→      <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-6">
+   159→        <Skeleton className="h-[340px] rounded-xl" />
+   160→        <div className="space-y-3">
+   161→          <Skeleton className="h-10 w-96" />
+   162→          {Array.from({ length: 4 }).map((_, i) => (
+   163→            <Skeleton key={i} className="h-20 w-full rounded-lg" />
+   164→          ))}
+   165→        </div>
+   166→      </div>
+   167→    </div>
+   168→  );
+   169→}
+   170→
+   171→// ── Main Component ─────────────────────────────────────────────────────────────
+   172→
+   173→export function AppointmentsModule() {
+   174→  // Data state
+   175→  const [appointments, setAppointments] = useState<Appointment[]>([]);
+   176→  const [clients, setClients] = useState<Client[]>([]);
+   177→  const [services, setServices] = useState<Service[]>([]);
+   178→  const [employees, setEmployees] = useState<Employee[]>([]);
+   179→
+   180→  // UI state
+   181→  const [loading, setLoading] = useState(true);
+   182→  const [activeTab, setActiveTab] = useState<string>('ALL');
+   183→  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
+   184→  const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
+   185→
+   186→  // Create dialog
+   187→  const [createOpen, setCreateOpen] = useState(false);
+   188→  const [createForm, setCreateForm] = useState({
+   189→    clientId: '',
+   190→    serviceId: '',
+   191→    employeeId: '',
+   192→    date: '',
+   193→    time: '',
+   194→    notes: '',
+   195→  });
+   196→  const [creating, setCreating] = useState(false);
+   197→
+   198→  // Notes dialog
+   199→  const [notesOpen, setNotesOpen] = useState(false);
+   200→  const [notesTarget, setNotesTarget] = useState<Appointment | null>(null);
+   201→  const [notesValue, setNotesValue] = useState('');
+   202→  const [savingNotes, setSavingNotes] = useState(false);
+   203→
+   204→  // Delete dialog
+   205→  const [deleteOpen, setDeleteOpen] = useState(false);
+   206→  const [deleteTarget, setDeleteTarget] = useState<Appointment | null>(null);
+   207→  const [deleting, setDeleting] = useState(false);
+   208→
+   209→  // ── Month appointments (for calendar dots) ─────────────────────────────────
+   210→
+   211→  const [monthAppointments, setMonthAppointments] = useState<Appointment[]>([]);
+   212→
+   213→  const fetchMonthAppointments = useCallback(async (month: Date) => {
+   214→    try {
+   215→      const year = month.getFullYear();
+   216→      const m = month.getMonth();
+   217→      const start = new Date(year, m, 1);
+   218→      const end = new Date(year, m + 1, 0, 23, 59, 59);
+   219→      // Fetch a wide range: start of month
+   220→      const res = await fetch(
+   221→        `/api/appointments?date=${toDateString(start)}`,
+   222→        { headers: authHeaders() }
+   223→      );
+   224→      if (!res.ok) return;
+   225→      const data: Appointment[] = await res.json();
+   226→      setMonthAppointments(
+   227→        data.filter((a) => {
+   228→          const d = new Date(a.date);
+   229→          return d >= start && d <= end;
+   230→        })
+   231→      );
+   232→    } catch {
+   233→      // silent
+   234→    }
+   235→  }, []);
+   236→
+   237→  useEffect(() => {
+   238→    fetchMonthAppointments(currentMonth);
+   239→  }, [currentMonth, fetchMonthAppointments]);
+   240→
+   241→  // ── Calendar dot map ───────────────────────────────────────────────────────
+   242→
+   243→  const dotMap = useMemo(() => {
+   244→    const map: Record<string, AppointmentStatus[]> = {};
+   245→    monthAppointments.forEach((a) => {
+   246→      const key = toDateString(new Date(a.date));
+   247→      if (!map[key]) map[key] = [];
+   248→      map[key].push(a.status);
+   249→    });
+   250→    return map;
+   251→  }, [monthAppointments]);
+   252→
+   253→  // Generate CSS for calendar dots
+   254→  const dotStyles = useMemo(() => {
+   255→    let css = '';
+   256→    Object.entries(dotMap).forEach(([dateStr, statuses]) => {
+   257→      const d = new Date(dateStr + 'T12:00:00');
+   258→      const localeStr = toLocaleDateString(d);
+   259→      const color = statusDotColor(statuses);
+   260→      css += `[data-day="${localeStr}"]::after { content:''; position:absolute; bottom:2px; left:50%; transform:translateX(-50%); width:5px; height:5px; border-radius:50%; background:${color}; }\n`;
+   261→    });
+   262→    return css;
+   263→  }, [dotMap]);
+   264→
+   265→  // ── Fetch helpers ──────────────────────────────────────────────────────────
+   266→
+   267→  const fetchAppointments = useCallback(async () => {
+   268→    try {
+   269→      const params = new URLSearchParams();
+   270→      if (selectedDate) params.set('date', toDateString(selectedDate));
+   271→      if (activeTab !== 'ALL') params.set('status', activeTab);
+   272→      const res = await fetch(`/api/appointments?${params.toString()}`, {
+   273→        headers: authHeaders(),
+   274→      });
+   275→      if (!res.ok) throw new Error();
+   276→      const data = await res.json();
+   277→      setAppointments(data);
+   278→    } catch {
+   279→      toast.error('Erreur lors du chargement des rendez-vous');
+   280→    }
+   281→  }, [selectedDate, activeTab]);
+   282→
+   283→  const fetchLookups = useCallback(async () => {
+   284→    try {
+   285→      const [clientsRes, servicesRes, usersRes] = await Promise.all([
+   286→        fetch('/api/clients', { headers: authHeaders() }),
+   287→        fetch('/api/services?active=true', { headers: authHeaders() }),
+   288→        fetch('/api/users', { headers: authHeaders() }),
+   289→      ]);
+   290→
+   291→      if (clientsRes.ok) setClients(await clientsRes.json());
+   292→      if (servicesRes.ok) setServices(await servicesRes.json());
+   293→      if (usersRes.ok) {
+   294→        const allUsers: Employee[] = await usersRes.json();
+   295→        setEmployees(allUsers.filter((u) => u.active));
+   296→      }
+   297→    } catch {
+   298→      // silent
+   299→    }
+   300→  }, []);
+   301→
+   302→  useEffect(() => {
+   303→    const init = async () => {
+   304→      setLoading(true);
+   305→      await Promise.all([fetchAppointments(), fetchLookups()]);
+   306→      setLoading(false);
+   307→    };
+   308→    init();
+   309→  }, []);
+   310→
+   311→  useEffect(() => {
+   312→    if (!loading) fetchAppointments();
+   313→  }, [fetchAppointments, loading]);
+   314→
+   315→  // ── Handlers ──────────────────────────────────────────────────────────────
+   316→
+   317→  const handleCreate = async () => {
+   318→    if (!createForm.clientId || !createForm.serviceId || !createForm.employeeId || !createForm.date || !createForm.time) {
+   319→      toast.error('Veuillez remplir tous les champs obligatoires');
+   320→      return;
+   321→    }
+   322→    setCreating(true);
+   323→    try {
+   324→      const isoDate = new Date(`${createForm.date}T${createForm.time}:00`).toISOString();
+   325→      const res = await fetch('/api/appointments', {
+   326→        method: 'POST',
+   327→        headers: authHeaders(),
+   328→        body: JSON.stringify({
+   329→          clientId: createForm.clientId,
+   330→          serviceId: createForm.serviceId,
+   331→          employeeId: createForm.employeeId,
+   332→          date: isoDate,
+   333→          notes: createForm.notes || undefined,
+   334→        }),
+   335→      });
+   336→      if (!res.ok) {
+   337→        const err = await res.json();
+   338→        toast.error(err.error || "Erreur lors de la création");
+   339→        return;
+   340→      }
+   341→      toast.success('Rendez-vous créé avec succès');
+   342→      setCreateOpen(false);
+   343→      setCreateForm({ clientId: '', serviceId: '', employeeId: '', date: '', time: '', notes: '' });
+   344→      fetchAppointments();
+   345→      fetchMonthAppointments(currentMonth);
+   346→    } catch {
+   347→      toast.error('Erreur de connexion');
+   348→    } finally {
+   349→      setCreating(false);
+   350→    }
+   351→  };
+   352→
+   353→  const handleStatusChange = async (id: string, status: AppointmentStatus) => {
+   354→    try {
+   355→      const res = await fetch('/api/appointments', {
+   356→        method: 'PUT',
+   357→        headers: authHeaders(),
+   358→        body: JSON.stringify({ id, status }),
+   359→      });
+   360→      if (!res.ok) {
+   361→        const err = await res.json();
+   362→        toast.error(err.error || 'Erreur lors de la modification');
+   363→        return;
+   364→      }
+   365→      if (status === 'TERMINE') {
+   366→        toast.success('Rendez-vous terminé — facture générée automatiquement');
+   367→      } else {
+   368→        toast.success('Statut mis à jour');
+   369→      }
+   370→      fetchAppointments();
+   371→      fetchMonthAppointments(currentMonth);
+   372→    } catch {
+   373→      toast.error('Erreur de connexion');
+   374→    }
+   375→  };
+   376→
+   377→  const handleOpenNotes = (apt: Appointment) => {
+   378→    setNotesTarget(apt);
+   379→    setNotesValue(apt.notes || '');
+   380→    setNotesOpen(true);
+   381→  };
+   382→
+   383→  const handleSaveNotes = async () => {
+   384→    if (!notesTarget) return;
+   385→    setSavingNotes(true);
+   386→    try {
+   387→      const res = await fetch('/api/appointments', {
+   388→        method: 'PUT',
+   389→        headers: authHeaders(),
+   390→        body: JSON.stringify({ id: notesTarget.id, notes: notesValue }),
+   391→      });
+   392→      if (!res.ok) {
+   393→        toast.error('Erreur lors de la sauvegarde des notes');
+   394→        return;
+   395→      }
+   396→      toast.success('Notes mises à jour');
+   397→      setNotesOpen(false);
+   398→      fetchAppointments();
+   399→    } catch {
+   400→      toast.error('Erreur de connexion');
+   401→    } finally {
+   402→      setSavingNotes(false);
+   403→    }
+   404→  };
+   405→
+   406→  const handleOpenDelete = (apt: Appointment) => {
+   407→    setDeleteTarget(apt);
+   408→    setDeleteOpen(true);
+   409→  };
+   410→
+   411→  const handleConfirmDelete = async () => {
+   412→    if (!deleteTarget) return;
+   413→    setDeleting(true);
+   414→    try {
+   415→      const res = await fetch('/api/appointments', {
+   416→        method: 'DELETE',
+   417→        headers: authHeaders(),
+   418→        body: JSON.stringify({ id: deleteTarget.id }),
+   419→      });
+   420→      if (!res.ok) {
+   421→        const err = await res.json();
+   422→        toast.error(err.error || 'Erreur lors de la suppression');
+   423→        return;
+   424→      }
+   425→      toast.success('Rendez-vous supprimé');
+   426→      setDeleteOpen(false);
+   427→      fetchAppointments();
+   428→      fetchMonthAppointments(currentMonth);
+   429→    } catch {
+   430→      toast.error('Erreur de connexion');
+   431→    } finally {
+   432→      setDeleting(false);
+   433→    }
+   434→  };
+   435→
+   436→  const handleDayClick = (day: Date) => {
+   437→    if (selectedDate && toDateString(selectedDate) === toDateString(day)) {
+   438→      setSelectedDate(undefined);
+   439→    } else {
+   440→      setSelectedDate(day);
+   441→    }
+   442→  };
+   443→
+   444→  // ── Render ────────────────────────────────────────────────────────────────
+   445→
+   446→  if (loading) {
+   447→    return (
+   448→      <div className="p-1">
+   449→        <LoadingSkeleton />
+   450→      </div>
+   451→    );
+   452→  }
+   453→
+   454→  return (
+   455→    <div className="space-y-6">
+   456→      {/* Header */}
+   457→      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+   458→        <div>
+   459→          <h1 className="text-2xl font-bold tracking-tight">Gestion des rendez-vous</h1>
+   460→          {selectedDate && (
+   461→            <p className="text-sm text-muted-foreground mt-1">
+   462→              <Calendar className="inline h-3.5 w-3.5 mr-1 -mt-0.5" />
+   463→              Sélectionné :{' '}
+   464→              {selectedDate.toLocaleDateString('fr-FR', {
+   465→                weekday: 'long',
+   466→                day: 'numeric',
+   467→                month: 'long',
+   468→                year: 'numeric',
+   469→              })}
+   470→              <button
+   471→                className="ml-2 text-primary underline text-xs hover:no-underline"
+   472→                onClick={() => setSelectedDate(undefined)}
+   473→              >
+   474→                Tout voir
+   475→              </button>
+   476→            </p>
+   477→          )}
+   478→        </div>
+   479→        <Button onClick={() => setCreateOpen(true)}>
+   480→          <Plus className="h-4 w-4 mr-2" />
+   481→          Nouveau rendez-vous
+   482→        </Button>
+   483→      </div>
+   484→
+   485→      <div className="grid grid-cols-1 lg:grid-cols-[340px_1fr] gap-6">
+   486→        {/* Calendar sidebar */}
+   487→        <Card className="h-fit">
+   488→          <CardContent className="p-4">
+   489→            <style>{`
+   490→              [data-slot="calendar"] button[data-day] { position: relative; }
+   491→              ${dotStyles}
+   492→            `}</style>
+   493→            <CalendarComponent
+   494→              mode="single"
+   495→              selected={selectedDate}
+   496→              onSelect={(day) => {
+   497→                if (day) handleDayClick(day);
+   498→              }}
+   499→              month={currentMonth}
+   500→              onMonthChange={setCurrentMonth}
+   501→              locale={fr}
+   502→              fixedWeeks
+   503→              className="mx-auto"
+   504→            />
+   505→            <div className="mt-3 flex items-center gap-4 justify-center text-xs text-muted-foreground">
+   506→              <span className="flex items-center gap-1.5">
+   507→                <span className="h-2 w-2 rounded-full bg-blue-500" />
+   508→                Programmé
+   509→              </span>
+   510→              <span className="flex items-center gap-1.5">
+   511→                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+   512→                Terminé
+   513→              </span>
+   514→              <span className="flex items-center gap-1.5">
+   515→                <span className="h-2 w-2 rounded-full bg-red-500" />
+   516→                Annulé
+   517→              </span>
+   518→            </div>
+   519→          </CardContent>
+   520→        </Card>
+   521→
+   522→        {/* Right side: filters + list */}
+   523→        <div className="space-y-4">
+   524→          {/* Status tabs */}
+   525→          <Tabs value={activeTab} onValueChange={setActiveTab}>
+   526→            <TabsList>
+   527→              <TabsTrigger value="ALL">Tous</TabsTrigger>
+   528→              <TabsTrigger value="PROGRAMME">Programmé</TabsTrigger>
+   529→              <TabsTrigger value="ANNULE">Annulé</TabsTrigger>
+   530→              <TabsTrigger value="TERMINE">Terminé</TabsTrigger>
+   531→            </TabsList>
+   532→          </Tabs>
+   533→
+   534→          {/* Appointments list */}
+   535→          {appointments.length === 0 ? (
+   536→            <Card>
+   537→              <CardContent className="py-12 flex flex-col items-center gap-2 text-muted-foreground">
+   538→                <Calendar className="h-10 w-10 mb-2 opacity-40" />
+   539→                <p className="text-sm font-medium">Aucun rendez-vous trouvé</p>
+   540→                <p className="text-xs">
+   541→                  {selectedDate
+   542→                    ? 'Aucun rendez-vous pour cette date'
+   543→                    : 'Créez un nouveau rendez-vous pour commencer'}
+   544→                </p>
+   545→              </CardContent>
+   546→            </Card>
+   547→          ) : (
+   548→            <>
+   549→              {/* Desktop table */}
+   550→              <div className="hidden md:block">
+   551→                <Card>
+   552→                  <div className="overflow-x-auto">
+   553→                    <Table>
+   554→                      <TableHeader>
+   555→                        <TableRow>
+   556→                          <TableHead>Client</TableHead>
+   557→                          <TableHead>Service</TableHead>
+   558→                          <TableHead>Employé</TableHead>
+   559→                          <TableHead>Date / Heure</TableHead>
+   560→                          <TableHead>Statut</TableHead>
+   561→                          <TableHead>Notes</TableHead>
+   562→                          <TableHead className="text-right">Actions</TableHead>
+   563→                        </TableRow>
+   564→                      </TableHeader>
+   565→                      <TableBody>
+   566→                        {appointments.map((apt) => (
+   567→                          <TableRow key={apt.id}>
+   568→                            <TableCell className="font-medium">
+   569→                              <span className="flex items-center gap-1.5">
+   570→                                <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+   571→                                {apt.client.firstName} {apt.client.lastName}
+   572→                              </span>
+   573→                            </TableCell>
+   574→                            <TableCell>{apt.service.name}</TableCell>
+   575→                            <TableCell>
+   576→                              <span className="flex items-center gap-1.5">
+   577→                                <UserCog className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+   578→                                {apt.employee.name}
+   579→                              </span>
+   580→                            </TableCell>
+   581→                            <TableCell>
+   582→                              <span className="flex items-center gap-1.5">
+   583→                                <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+   584→                                {formatDateFr(apt.date)}
+   585→                              </span>
+   586→                            </TableCell>
+   587→                            <TableCell>
+   588→                              <StatusSelect
+   589→                                appointment={apt}
+   590→                                onChange={handleStatusChange}
+   591→                              />
+   592→                            </TableCell>
+   593→                            <TableCell>
+   594→                              {apt.notes ? (
+   595→                                <Button
+   596→                                  variant="ghost"
+   597→                                  size="sm"
+   598→                                  className="h-7 px-2 text-xs text-muted-foreground"
+   599→                                  onClick={() => handleOpenNotes(apt)}
+   600→                                >
+   601→                                  <FileText className="h-3 w-3 mr-1" />
+   602→                                  Voir
+   603→                                </Button>
+   604→                              ) : (
+   605→                                <Button
+   606→                                  variant="ghost"
+   607→                                  size="sm"
+   608→                                  className="h-7 px-2 text-xs text-muted-foreground"
+   609→                                  onClick={() => handleOpenNotes(apt)}
+   610→                                >
+   611→                                  <Pencil className="h-3 w-3 mr-1" />
+   612→                                  Ajouter
+   613→                                </Button>
+   614→                              )}
+   615→                            </TableCell>
+   616→                            <TableCell className="text-right">
+   617→                              <div className="flex items-center justify-end gap-1">
+   618→                                <Button
+   619→                                  variant="ghost"
+   620→                                  size="icon"
+   621→                                  className="h-8 w-8"
+   622→                                  onClick={() => handleOpenNotes(apt)}
+   623→                                  title="Modifier les notes"
+   624→                                >
+   625→                                  <Pencil className="h-3.5 w-3.5" />
+   626→                                </Button>
+   627→                                {apt.status === 'PROGRAMME' && (
+   628→                                  <Button
+   629→                                    variant="ghost"
+   630→                                    size="icon"
+   631→                                    className="h-8 w-8 text-destructive hover:text-destructive"
+   632→                                    onClick={() => handleOpenDelete(apt)}
+   633→                                    title="Supprimer"
+   634→                                  >
+   635→                                    <Trash2 className="h-3.5 w-3.5" />
+   636→                                  </Button>
+   637→                                )}
+   638→                              </div>
+   639→                            </TableCell>
+   640→                          </TableRow>
+   641→                        ))}
+   642→                      </TableBody>
+   643→                    </Table>
+   644→                  </div>
+   645→                </Card>
+   646→              </div>
+   647→
+   648→              {/* Mobile cards */}
+   649→              <div className="md:hidden space-y-3 max-h-[calc(100vh-320px)] overflow-y-auto pr-1">
+   650→                {appointments.map((apt) => (
+   651→                  <Card key={apt.id} className="p-4">
+   652→                    <div className="flex items-start justify-between gap-2 mb-3">
+   653→                      <div className="min-w-0">
+   654→                        <p className="font-semibold text-sm truncate">
+   655→                          {apt.client.firstName} {apt.client.lastName}
+   656→                        </p>
+   657→                        <p className="text-sm text-muted-foreground">{apt.service.name}</p>
+   658→                      </div>
+   659→                      <StatusSelect appointment={apt} onChange={handleStatusChange} />
+   660→                    </div>
+   661→                    <div className="space-y-1.5 text-sm text-muted-foreground">
+   662→                      <div className="flex items-center gap-2">
+   663→                        <UserCog className="h-3.5 w-3.5 shrink-0" />
+   664→                        <span>{apt.employee.name}</span>
+   665→                      </div>
+   666→                      <div className="flex items-center gap-2">
+   667→                        <Clock className="h-3.5 w-3.5 shrink-0" />
+   668→                        <span>{formatDateFr(apt.date)}</span>
+   669→                      </div>
+   670→                      {apt.notes && (
+   671→                        <div className="flex items-start gap-2">
+   672→                          <FileText className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+   673→                          <span className="line-clamp-2">{apt.notes}</span>
+   674→                        </div>
+   675→                      )}
+   676→                    </div>
+   677→                    <div className="flex items-center gap-2 mt-3 pt-3 border-t">
+   678→                      <Button
+   679→                        variant="outline"
+   680→                        size="sm"
+   681→                        className="h-8 text-xs"
+   682→                        onClick={() => handleOpenNotes(apt)}
+   683→                      >
+   684→                        <Pencil className="h-3 w-3 mr-1" />
+   685→                        Notes
+   686→                      </Button>
+   687→                      {apt.status === 'PROGRAMME' && (
+   688→                        <Button
+   689→                          variant="outline"
+   690→                          size="sm"
+   691→                          className="h-8 text-xs text-destructive hover:text-destructive ml-auto"
+   692→                          onClick={() => handleOpenDelete(apt)}
+   693→                        >
+   694→                          <Trash2 className="h-3 w-3 mr-1" />
+   695→                          Supprimer
+   696→                        </Button>
+   697→                      )}
+   698→                    </div>
+   699→                  </Card>
+   700→                ))}
+   701→              </div>
+   702→            </>
+   703→          )}
+   704→        </div>
+   705→      </div>
+   706→
+   707→      {/* ── Create Dialog ────────────────────────────────────────────────────── */}
+   708→      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+   709→        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+   710→          <DialogHeader>
+   711→            <DialogTitle>Nouveau rendez-vous</DialogTitle>
+   712→            <DialogDescription>
+   713→              Remplissez les informations pour créer un rendez-vous.
+   714→            </DialogDescription>
+   715→          </DialogHeader>
+   716→          <div className="grid gap-4 py-2">
+   717→            {/* Client */}
+   718→            <div className="space-y-2">
+   719→              <Label htmlFor="create-client">Client *</Label>
+   720→              <Select
+   721→                value={createForm.clientId}
+   722→                onValueChange={(v) => setCreateForm((f) => ({ ...f, clientId: v }))}
+   723→              >
+   724→                <SelectTrigger id="create-client" className="w-full">
+   725→                  <SelectValue placeholder="Sélectionner un client" />
+   726→                </SelectTrigger>
+   727→                <SelectContent>
+   728→                  {clients.map((c) => (
+   729→                    <SelectItem key={c.id} value={c.id}>
+   730→                      {c.firstName} {c.lastName}
+   731→                    </SelectItem>
+   732→                  ))}
+   733→                </SelectContent>
+   734→              </Select>
+   735→            </div>
+   736→
+   737→            {/* Service */}
+   738→            <div className="space-y-2">
+   739→              <Label htmlFor="create-service">Service *</Label>
+   740→              <Select
+   741→                value={createForm.serviceId}
+   742→                onValueChange={(v) => setCreateForm((f) => ({ ...f, serviceId: v }))}
+   743→              >
+   744→                <SelectTrigger id="create-service" className="w-full">
+   745→                  <SelectValue placeholder="Sélectionner un service" />
+   746→                </SelectTrigger>
+   747→                <SelectContent>
+   748→                  {services.map((s) => (
+   749→                    <SelectItem key={s.id} value={s.id}>
+   750→                      {s.name} — {s.price.toFixed(2)} €
+   751→                    </SelectItem>
+   752→                  ))}
+   753→                </SelectContent>
+   754→              </Select>
+   755→            </div>
+   756→
+   757→            {/* Employee */}
+   758→            <div className="space-y-2">
+   759→              <Label htmlFor="create-employee">Employé *</Label>
+   760→              <Select
+   761→                value={createForm.employeeId}
+   762→                onValueChange={(v) => setCreateForm((f) => ({ ...f, employeeId: v }))}
+   763→              >
+   764→                <SelectTrigger id="create-employee" className="w-full">
+   765→                  <SelectValue placeholder="Sélectionner un employé" />
+   766→                </SelectTrigger>
+   767→                <SelectContent>
+   768→                  {employees.map((e) => (
+   769→                    <SelectItem key={e.id} value={e.id}>
+   770→                      {e.name}
+   771→                    </SelectItem>
+   772→                  ))}
+   773→                </SelectContent>
+   774→              </Select>
+   775→            </div>
+   776→
+   777→            {/* Date & Time */}
+   778→            <div className="grid grid-cols-2 gap-3">
+   779→              <div className="space-y-2">
+   780→                <Label htmlFor="create-date">Date *</Label>
+   781→                <Input
+   782→                  id="create-date"
+   783→                  type="date"
+   784→                  value={createForm.date}
+   785→                  onChange={(e) => setCreateForm((f) => ({ ...f, date: e.target.value }))}
+   786→                />
+   787→              </div>
+   788→              <div className="space-y-2">
+   789→                <Label htmlFor="create-time">Heure *</Label>
+   790→                <Input
+   791→                  id="create-time"
+   792→                  type="time"
+   793→                  value={createForm.time}
+   794→                  onChange={(e) => setCreateForm((f) => ({ ...f, time: e.target.value }))}
+   795→                />
+   796→              </div>
+   797→            </div>
+   798→
+   799→            {/* Notes */}
+   800→            <div className="space-y-2">
+   801→              <Label htmlFor="create-notes">Notes</Label>
+   802→              <Textarea
+   803→                id="create-notes"
+   804→                placeholder="Notes supplémentaires (optionnel)"
+   805→                rows={3}
+   806→                value={createForm.notes}
+   807→                onChange={(e) => setCreateForm((f) => ({ ...f, notes: e.target.value }))}
+   808→              />
+   809→            </div>
+   810→          </div>
+   811→          <DialogFooter>
+   812→            <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>
+   813→              <X className="h-4 w-4 mr-1" />
+   814→              Annuler
+   815→            </Button>
+   816→            <Button onClick={handleCreate} disabled={creating}>
+   817→              {creating ? (
+   818→                <>
+   819→                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+   820→                  Création...
+   821→                </>
+   822→              ) : (
+   823→                <>
+   824→                  <Check className="h-4 w-4 mr-1" />
+   825→                  Créer
+   826→                </>
+   827→              )}
+   828→            </Button>
+   829→          </DialogFooter>
+   830→        </DialogContent>
+   831→      </Dialog>
+   832→
+   833→      {/* ── Notes Dialog ─────────────────────────────────────────────────────── */}
+   834→      <Dialog open={notesOpen} onOpenChange={setNotesOpen}>
+   835→        <DialogContent className="sm:max-w-md">
+   836→          <DialogHeader>
+   837→            <DialogTitle>Modifier les notes</DialogTitle>
+   838→            <DialogDescription>
+   839→              {notesTarget && (
+   840→                <>
+   841→                  Rendez-vous de {notesTarget.client.firstName} {notesTarget.client.lastName} — {notesTarget.service.name}
+   842→                </>
+   843→              )}
+   844→            </DialogDescription>
+   845→          </DialogHeader>
+   846→          <Textarea
+   847→            rows={5}
+   848→            placeholder="Ajouter des notes..."
+   849→            value={notesValue}
+   850→            onChange={(e) => setNotesValue(e.target.value)}
+   851→          />
+   852→          <DialogFooter>
+   853→            <Button variant="outline" onClick={() => setNotesOpen(false)} disabled={savingNotes}>
+   854→              <X className="h-4 w-4 mr-1" />
+   855→              Annuler
+   856→            </Button>
+   857→            <Button onClick={handleSaveNotes} disabled={savingNotes}>
+   858→              {savingNotes ? (
+   859→                <>
+   860→                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+   861→                  Sauvegarde...
+   862→                </>
+   863→              ) : (
+   864→                <>
+   865→                  <Check className="h-4 w-4 mr-1" />
+   866→                  Sauvegarder
+   867→                </>
+   868→              )}
+   869→            </Button>
+   870→          </DialogFooter>
+   871→        </DialogContent>
+   872→      </Dialog>
+   873→
+   874→      {/* ── Delete AlertDialog ───────────────────────────────────────────────── */}
+   875→      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+   876→        <AlertDialogContent>
+   877→          <AlertDialogHeader>
+   878→            <AlertDialogTitle className="flex items-center gap-2">
+   879→              <AlertCircle className="h-5 w-5 text-destructive shrink-0" />
+   880→              Supprimer le rendez-vous
+   881→            </AlertDialogTitle>
+   882→            <AlertDialogDescription>
+   883→              {deleteTarget && (
+   884→                <>
+   885→                  Êtes-vous sûr de vouloir supprimer le rendez-vous de{' '}
+   886→                  <strong>
+   887→                    {deleteTarget.client.firstName} {deleteTarget.client.lastName}
+   888→                  </strong>{' '}
+   889→                  du {formatDateFr(deleteTarget.date)} ? Cette action est irréversible.
+   890→                </>
+   891→              )}
+   892→            </AlertDialogDescription>
+   893→          </AlertDialogHeader>
+   894→          <AlertDialogFooter>
+   895→            <AlertDialogCancel disabled={deleting}>Annuler</AlertDialogCancel>
+   896→            <AlertDialogAction
+   897→              onClick={handleConfirmDelete}
+   898→              disabled={deleting}
+   899→              className="bg-destructive text-white hover:bg-destructive/90"
+   900→            >
+   901→              {deleting ? (
+   902→                <>
+   903→                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+   904→                  Suppression...
+   905→                </>
+   906→              ) : (
+   907→                <>
+   908→                  <Trash2 className="h-4 w-4 mr-1" />
+   909→                  Supprimer
+   910→                </>
+   911→              )}
+   912→            </AlertDialogAction>
+   913→          </AlertDialogFooter>
+   914→        </AlertDialogContent>
+   915→      </AlertDialog>
+   916→    </div>
+   917→  );
+   918→}
+   919→
+   920→// ── Status Select ─────────────────────────────────────────────────────────────
+   921→
+   922→function StatusSelect({
+   923→  appointment,
+   924→  onChange,
+   925→}: {
+   926→  appointment: Appointment;
+   927→  onChange: (id: string, status: AppointmentStatus) => void;
+   928→}) {
+   929→  const currentStatus = appointment.status;
+   930→  const displayVariant = statusBadgeVariant(currentStatus);
+   931→  const displayClass = statusBadgeClass(currentStatus);
+   932→
+   933→  return (
+   934→    <Select
+   935→      value={currentStatus}
+   936→      onValueChange={(v) => onChange(appointment.id, v as AppointmentStatus)}
+   937→    >
+   938→      <SelectTrigger size="sm" className="w-[120px] h-7 text-xs">
+   939→        <Badge variant={displayVariant} className={displayClass}>
+   940→          {STATUS_LABELS[currentStatus]}
+   941→        </Badge>
+   942→      </SelectTrigger>
+   943→      <SelectContent>
+   944→        <SelectItem value="PROGRAMME">
+   945→          <span className="flex items-center gap-1.5">
+   946→            <span className="h-2 w-2 rounded-full bg-blue-500" />
+   947→            Programmé
+   948→          </span>
+   949→        </SelectItem>
+   950→        <SelectItem value="ANNULE">
+   951→          <span className="flex items-center gap-1.5">
+   952→            <span className="h-2 w-2 rounded-full bg-red-500" />
+   953→            Annulé
+   954→          </span>
+   955→        </SelectItem>
+   956→        <SelectItem value="TERMINE">
+   957→          <span className="flex items-center gap-1.5">
+   958→            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+   959→            Terminé
+   960→          </span>
+   961→        </SelectItem>
+   962→      </SelectContent>
+   963→    </Select>
+   964→  );
+   965→}

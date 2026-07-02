@@ -465,7 +465,7 @@ export function InvoicesModule() {
                           {invoice.client.lastName}
                         </TableCell>
                         <TableCell className="px-4 text-muted-foreground">
-                          {invoice.appointment.service.name}
+                          {invoice.appointment.services.map((as: { service: { name: string } }) => as.service.name).join(', ')}
                         </TableCell>
                         <TableCell className="px-4 text-right font-medium">
                           {formatAmount(invoice.amount)}
@@ -545,9 +545,9 @@ export function InvoicesModule() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Service</p>
+                    <p className="text-xs text-muted-foreground">Service(s)</p>
                     <p className="font-medium">
-                      {selectedInvoice.appointment.service.name}
+                      {selectedInvoice.appointment.services.map((as: { service: { name: string } }) => as.service.name).join(', ')}
                     </p>
                   </div>
                   <div>
