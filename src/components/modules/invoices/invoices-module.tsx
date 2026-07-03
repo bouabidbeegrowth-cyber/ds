@@ -52,7 +52,7 @@ interface ServiceData {
 }
 
 interface AppointmentData {
-  service: ServiceData;
+  services: { service: ServiceData }[];
 }
 
 interface ClientData {

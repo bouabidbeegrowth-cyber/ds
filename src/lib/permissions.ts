@@ -90,15 +90,15 @@ export function serializePermissions(permissions: Permissions): string {
 }
 
 // Check if a permission level allows a specific action
-export function canRead(level: PermissionLevel): boolean {
-  return level !== 'none';
+export function canRead(level: PermissionLevel | undefined): boolean {
+  return !!level && level !== 'none';
 }
 
-export function canWrite(level: PermissionLevel): boolean {
+export function canWrite(level: PermissionLevel | undefined): boolean {
   return level === 'write' || level === 'full';
 }
 
-export function canDelete(level: PermissionLevel): boolean {
+export function canDelete(level: PermissionLevel | undefined): boolean {
   return level === 'full';
 }
 

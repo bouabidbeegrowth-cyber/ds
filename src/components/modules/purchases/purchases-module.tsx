@@ -88,7 +88,6 @@ function getCurrentMonth(): string {
 
 export function PurchasesModule() {
   const { user } = useAuthStore();
-  const isAdmin = user?.role === 'ADMIN';
 
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [loading, setLoading] = useState(true);

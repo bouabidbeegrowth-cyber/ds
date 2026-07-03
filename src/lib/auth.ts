@@ -48,7 +48,7 @@ export async function verifyAuth(req: NextRequest): Promise<{ user: AuthUser; er
     let permissions = user.roleRelation?.permissions
       ? parsePermissions(user.roleRelation.permissions)
       : parsePermissions('{}');
-    let isSystemAdmin = user.roleRelation?.isSystem && user.roleRelation?.name === 'Administrateur';
+    let isSystemAdmin = !!(user.roleRelation?.isSystem && user.roleRelation?.name === 'Administrateur');
 
     if (!roleId) {
       // Migrate on the fly

@@ -120,7 +120,6 @@ function getMonthLabel(monthStr: string): string {
 
 export function ExpensesModule() {
   const { user } = useAuthStore();
-  const isAdmin = user?.role === 'ADMIN';
 
   // State
   const [expenses, setExpenses] = useState<Expense[]>([]);

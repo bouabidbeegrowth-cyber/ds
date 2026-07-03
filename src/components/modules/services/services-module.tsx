@@ -78,7 +78,7 @@ const emptyForm: ServiceFormData = {
 export function ServicesModule() {
   const { user } = useAuthStore();
   const { toast } = useToast();
-  const isAdmin = user?.role === 'ADMIN';
+  const canCreate = canWrite(user?.permissions?.services);
 
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
@@ -259,7 +259,7 @@ export function ServicesModule() {
             <Skeleton className="h-8 w-56" />
             <Skeleton className="h-4 w-40" />
           </div>
-          {isAdmin && <Skeleton className="h-10 w-40" />}
+          {canCreate && <Skeleton className="h-10 w-40" />}
         </div>
         {/* Cards grid skeleton */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -312,7 +312,7 @@ export function ServicesModule() {
           <Sparkles className="mb-4 size-12 text-muted-foreground/40" />
           <p className="text-lg font-medium text-muted-foreground">Aucun service</p>
           <p className="mt-1 text-sm text-muted-foreground/70">
-            {isAdmin
+            {canCreate
               ? 'Créez votre premier service pour commencer.'
               : 'Aucun service n\'a été configuré.'}
           </p>

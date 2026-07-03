@@ -61,7 +61,20 @@ export function initializeAuth() {
   if (userStr && token) {
     try {
       const user = JSON.parse(userStr);
-      useAuthStore.getState().login(user, token);
+      // Only accept stored data if it has the new permissions field
+      // Old sessions (without permissions) need a server refresh
+      if (user.permissions && typeof user.permissions === 'object') {
+        useAuthStore.getState().login(user, token);
+      } else {
+        // Old format — clear stored user but keep token for refresh
+        localStorage.removeItem('ds_user');
+        // Set authenticated state with minimal data so page.tsx triggers refresh
+        useAuthStore.setState({
+          token,
+          isAuthenticated: true,
+          user: null,
+        });
+      }
     } catch {
       localStorage.removeItem('ds_user');
       localStorage.removeItem('ds_token');

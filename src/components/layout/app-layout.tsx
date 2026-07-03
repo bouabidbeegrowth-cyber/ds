@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useAuthStore } from '@/store/auth-store';
 import {
   LayoutDashboard, Users, Sparkles, Calendar, FileText,
@@ -43,24 +43,24 @@ export function AppLayout() {
   const permissions = user?.permissions;
 
   // Filter nav items based on user permissions
-  const visibleNavItems = NAV_ITEMS.filter((item) => {
-    // For the "roles" page, need full access to users module
-    if (item.id === 'roles') {
-      return permissions?.users === 'full';
-    }
-    // For all other modules, need at least read access
-    const level = permissions?.[item.module];
-    return level && level !== 'none';
-  });
+  const visibleNavItems = useMemo(() => {
+    if (!permissions) return [];
+    return NAV_ITEMS.filter((item) => {
+      if (item.id === 'roles') {
+        return permissions.users === 'full';
+      }
+      const level = permissions[item.module];
+      return level && level !== 'none';
+    });
+  }, [permissions]);
 
-  // Find the first accessible page for redirect
-  const getAccessiblePage = (): Page => {
-    if (visibleNavItems.length > 0) {
-      const first = visibleNavItems[0];
-      return first.id;
-    }
+  // Derive the actual active page: use currentPage if accessible, otherwise first visible item
+  const activePage = useMemo((): Page => {
+    const isAccessible = visibleNavItems.some((item) => item.id === currentPage);
+    if (isAccessible) return currentPage;
+    if (visibleNavItems.length > 0) return visibleNavItems[0].id;
     return 'dashboard';
-  };
+  }, [currentPage, visibleNavItems]);
 
   const handleLogout = () => {
     logout();
@@ -71,27 +71,14 @@ export function AppLayout() {
     setSidebarOpen(false);
   };
 
-  // Check if current page is accessible
-  const isCurrentPageAccessible = () => {
-    if (!user?.permissions) return false;
-    const navItem = NAV_ITEMS.find((n) => n.id === currentPage);
-    if (!navItem) return false;
-    if (navItem.id === 'roles') {
-      return user.permissions.users === 'full';
-    }
-    const level = user.permissions[navItem.module];
-    return level && level !== 'none';
-  };
+  const currentNav = NAV_ITEMS.find((n) => n.id === activePage);
 
   const renderPage = () => {
-    // If the current page is not accessible, redirect to the first accessible one
-    if (!isCurrentPageAccessible()) {
-      const accessible = getAccessiblePage();
-      setCurrentPage(accessible);
-      return null;
-    }
+    // Only render if the page is accessible
+    const isAccessible = visibleNavItems.some((item) => item.id === activePage);
+    if (!isAccessible) return null;
 
-    switch (currentPage) {
+    switch (activePage) {
       case 'dashboard': return <DashboardModule />;
       case 'clients': return <ClientsModule />;
       case 'services': return <ServicesModule />;
@@ -104,8 +91,6 @@ export function AppLayout() {
       default: return <DashboardModule />;
     }
   };
-
-  const currentNav = NAV_ITEMS.find((n) => n.id === currentPage);
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-background">
@@ -149,7 +134,7 @@ export function AppLayout() {
             <nav className="space-y-1">
               {visibleNavItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = currentPage === item.id;
+                const isActive = activePage === item.id;
                 return (
                   <button
                     key={item.id}
@@ -212,7 +197,7 @@ export function AppLayout() {
             <Menu className="h-5 w-5" />
           </Button>
           <div className="flex items-center gap-2">
-            {currentNav && isCurrentPageAccessible() && (
+            {currentNav && (
               <>
                 <currentNav.icon className="h-5 w-5 text-primary" />
                 <h2 className="text-lg font-semibold text-foreground">{currentNav.label}</h2>
