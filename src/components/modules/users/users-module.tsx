@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '@/store/auth-store';
+import { canWrite } from '@/lib/permissions';
+import { usePagination } from '@/hooks/use-pagination';
+import { PaginationBar } from '@/components/shared/pagination-bar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -70,6 +73,7 @@ function getToken(): string | null {
 
 export function UsersModule() {
   const currentUser = useAuthStore((s) => s.user);
+  const canManage = canWrite(currentUser?.permissions?.users);
 
   const [users, setUsers] = useState<UserItem[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -143,6 +147,8 @@ export function UsersModule() {
     fetchRoles();
     fetchUsers();
   }, [fetchRoles, fetchUsers]);
+
+  const { page, setPage, pageItems: pagedUsers, totalPages, totalItems, pageSize } = usePagination(users, 10);
 
   const getRoleName = (user: UserItem): string => {
     return user.roleRelation?.name || 'Non assigné';
@@ -327,10 +333,12 @@ export function UsersModule() {
           <UserCog className="h-6 w-6 text-primary" />
           <h2 className="text-2xl font-bold tracking-tight">Gestion des utilisateurs</h2>
         </div>
-        <Button onClick={() => { setCreateForm({ name: '', username: '', password: '', roleId: '' }); setCreateError(''); setCreateOpen(true); }}>
-          <Plus className="h-4 w-4 mr-2" />
-          Nouvel utilisateur
-        </Button>
+        {canManage && (
+          <Button onClick={() => { setCreateForm({ name: '', username: '', password: '', roleId: '' }); setCreateError(''); setCreateOpen(true); }}>
+            <Plus className="h-4 w-4 mr-2" />
+            Nouvel utilisateur
+          </Button>
+        )}
       </div>
 
       {/* Error */}
@@ -351,7 +359,7 @@ export function UsersModule() {
               <p>Aucun utilisateur trouvé</p>
             </div>
           ) : (
-            <ScrollArea className="max-h-[500px]">
+            <ScrollArea className="max-h-[500px] overflow-y-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -363,7 +371,7 @@ export function UsersModule() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users.map((user) => (
+                  {pagedUsers.map((user) => (
                     <TableRow key={user.id} className={!user.active ? 'opacity-60' : ''}>
                       <TableCell className="pl-4 font-medium">
                         <div className="flex items-center gap-2">
@@ -383,7 +391,7 @@ export function UsersModule() {
                         <div className="flex items-center gap-2">
                           <Switch
                             checked={user.active}
-                            disabled={isSelf(user.id)}
+                            disabled={isSelf(user.id) || !canManage}
                             onCheckedChange={() => openToggle(user)}
                             aria-label={`Statut de ${user.name}`}
                           />
@@ -398,27 +406,31 @@ export function UsersModule() {
                       </TableCell>
                       <TableCell className="pr-4 text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openEdit(user)}
-                            aria-label={`Modifier ${user.name}`}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openToggle(user)}
-                            disabled={isSelf(user.id)}
-                            aria-label={user.active ? `Désactiver ${user.name}` : `Activer ${user.name}`}
-                          >
-                            {user.active ? (
-                              <UserX className="h-4 w-4 text-destructive" />
-                            ) : (
-                              <UserCheck className="h-4 w-4 text-emerald-600" />
-                            )}
-                          </Button>
+                          {canManage && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openEdit(user)}
+                              aria-label={`Modifier ${user.name}`}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {canManage && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openToggle(user)}
+                              disabled={isSelf(user.id)}
+                              aria-label={user.active ? `Désactiver ${user.name}` : `Activer ${user.name}`}
+                            >
+                              {user.active ? (
+                                <UserX className="h-4 w-4 text-destructive" />
+                              ) : (
+                                <UserCheck className="h-4 w-4 text-emerald-600" />
+                              )}
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -442,7 +454,7 @@ export function UsersModule() {
             </CardContent>
           </Card>
         ) : (
-          users.map((user) => (
+          pagedUsers.map((user) => (
             <Card key={user.id} className={!user.active ? 'opacity-60' : ''}>
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -464,7 +476,7 @@ export function UsersModule() {
                   <div className="flex items-center gap-2">
                     <Switch
                       checked={user.active}
-                      disabled={isSelf(user.id)}
+                      disabled={isSelf(user.id) || !canManage}
                       onCheckedChange={() => openToggle(user)}
                       aria-label={`Statut de ${user.name}`}
                     />
@@ -477,29 +489,33 @@ export function UsersModule() {
                     </span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9"
-                      onClick={() => openEdit(user)}
-                      aria-label={`Modifier ${user.name}`}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9"
-                      onClick={() => openToggle(user)}
-                      disabled={isSelf(user.id)}
-                      aria-label={user.active ? `Désactiver ${user.name}` : `Activer ${user.name}`}
-                    >
-                      {user.active ? (
-                        <UserX className="h-4 w-4 text-destructive" />
-                      ) : (
-                        <UserCheck className="h-4 w-4 text-emerald-600" />
-                      )}
-                    </Button>
+                    {canManage && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9"
+                        onClick={() => openEdit(user)}
+                        aria-label={`Modifier ${user.name}`}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {canManage && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9"
+                        onClick={() => openToggle(user)}
+                        disabled={isSelf(user.id)}
+                        aria-label={user.active ? `Désactiver ${user.name}` : `Activer ${user.name}`}
+                      >
+                        {user.active ? (
+                          <UserX className="h-4 w-4 text-destructive" />
+                        ) : (
+                          <UserCheck className="h-4 w-4 text-emerald-600" />
+                        )}
+                      </Button>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -507,6 +523,14 @@ export function UsersModule() {
           ))
         )}
       </div>
+
+      <PaginationBar
+        page={page}
+        totalPages={totalPages}
+        totalItems={totalItems}
+        pageSize={pageSize}
+        onPageChange={setPage}
+      />
 
       {/* Create Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>

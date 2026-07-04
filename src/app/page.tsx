@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore, useCallback } from 'react';
 import { useAuthStore, initializeAuth } from '@/store/auth-store';
 import { LoginForm } from '@/components/modules/login-form';
 import { AppLayout } from '@/components/layout/app-layout';
+import { ALL_MODULES } from '@/lib/permissions';
 
 function useMounted() {
   return useSyncExternalStore(
@@ -59,13 +60,15 @@ export default function Home() {
       return;
     }
 
-    // Authenticated with valid user that has permissions — ready
-    if (user?.permissions && Object.keys(user.permissions).length > 0) {
+    // Authenticated with valid, up-to-date permissions — ready
+    const hasAllModules = ALL_MODULES.every((mod) => user?.permissions?.[mod] !== undefined);
+    if (user?.permissions && hasAllModules) {
       setLoading(false);
       return;
     }
 
-    // Authenticated but no permissions (old session) — refresh from server
+    // Authenticated but permissions missing or stale (old session, or a module
+    // was added since this session's cached data was stored) — refresh from server
     refreshPermissions();
   }, [mounted, isAuthenticated, token, user, refreshPermissions]);
 

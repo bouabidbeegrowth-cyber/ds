@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '@/store/auth-store';
+import { canWrite, canDelete } from '@/lib/permissions';
+import { usePagination } from '@/hooks/use-pagination';
+import { PaginationBar } from '@/components/shared/pagination-bar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -83,9 +86,15 @@ const MODULE_COLORS: Record<string, string> = {
 };
 
 export function RolesModule() {
+  const currentUser = useAuthStore((s) => s.user);
+  const canManage = canWrite(currentUser?.permissions?.users);
+  const canRemove = canDelete(currentUser?.permissions?.users);
+  const isProtectedAdminRole = (role: Role) => role.isSystem && role.name === 'Administrateur';
+
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Create dialog
   const [createOpen, setCreateOpen] = useState(false);
@@ -110,7 +119,12 @@ export function RolesModule() {
   const fetchRoles = useCallback(async () => {
     try {
       const token = getToken();
-      const res = await fetch('/api/roles', {
+      const params = new URLSearchParams();
+      if (searchQuery.trim()) {
+        params.append('q', searchQuery.trim());
+      }
+      const url = `/api/roles${params.toString() ? `?${params}` : ''}`;
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {
@@ -126,11 +140,17 @@ export function RolesModule() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [searchQuery]);
 
   useEffect(() => {
-    fetchRoles();
-  }, [fetchRoles]);
+    const timer = setTimeout(() => {
+      setLoading(true);
+      fetchRoles();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, fetchRoles]);
+
+  const { page, setPage, pageItems: pagedRoles, totalPages, totalItems, pageSize } = usePagination(roles, 10);
 
   // --- Create ---
   const openCreate = () => {
@@ -317,15 +337,25 @@ export function RolesModule() {
   return (
     <section className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
-          <Shield className="h-6 w-6 text-primary" />
-          <h2 className="text-2xl font-bold tracking-tight">Gestion des rôles</h2>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <Shield className="h-6 w-6 text-primary" />
+            <h2 className="text-2xl font-bold tracking-tight">Gestion des rôles</h2>
+          </div>
+          {canManage && (
+            <Button onClick={openCreate}>
+              <Plus className="h-4 w-4 mr-2" />
+              Nouveau rôle
+            </Button>
+          )}
         </div>
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4 mr-2" />
-          Nouveau rôle
-        </Button>
+        <Input
+          placeholder="Rechercher un rôle..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="sm:max-w-xs"
+        />
       </div>
 
       {/* Info alert */}
@@ -354,7 +384,7 @@ export function RolesModule() {
               <p>Aucun rôle trouvé</p>
             </div>
           ) : (
-            <ScrollArea className="max-h-[500px]">
+            <ScrollArea className="max-h-[500px] overflow-y-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -365,13 +395,19 @@ export function RolesModule() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {roles.map((role) => (
+                  {pagedRoles.map((role) => (
                     <TableRow key={role.id}>
                       <TableCell className="pl-4">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{role.name}</span>
                           {role.isSystem && (
                             <Badge variant="outline" className="text-xs">Système</Badge>
+                          )}
+                          {isProtectedAdminRole(role) && (
+                            <Badge variant="outline" className="text-xs gap-1">
+                              <Lock className="h-3 w-3" />
+                              Non modifiable
+                            </Badge>
                           )}
                         </div>
                       </TableCell>
@@ -396,16 +432,18 @@ export function RolesModule() {
                         </div>
                       </TableCell>
                       <TableCell className="pr-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openEdit(role)}
-                            aria-label={`Modifier ${role.name}`}
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          {!role.isSystem && (
+                        <div className="flex items-center justify-end gap-1 relative z-60">
+                          {canManage && !isProtectedAdminRole(role) && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openEdit(role)}
+                              aria-label={`Modifier ${role.name}`}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {canRemove && !role.isSystem && (
                             <Button
                               variant="ghost"
                               size="icon"
@@ -438,15 +476,21 @@ export function RolesModule() {
             </CardContent>
           </Card>
         ) : (
-          roles.map((role) => (
+          pagedRoles.map((role) => (
             <Card key={role.id}>
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-medium truncate">{role.name}</p>
                       {role.isSystem && (
                         <Badge variant="outline" className="text-xs shrink-0">Système</Badge>
+                      )}
+                      {isProtectedAdminRole(role) && (
+                        <Badge variant="outline" className="text-xs shrink-0 gap-1">
+                          <Lock className="h-3 w-3" />
+                          Non modifiable
+                        </Badge>
                       )}
                     </div>
                     <p className="text-sm text-muted-foreground">
@@ -454,16 +498,18 @@ export function RolesModule() {
                       {role.userCount} utilisateur{role.userCount > 1 ? 's' : ''}
                     </p>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9"
-                      onClick={() => openEdit(role)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    {!role.isSystem && (
+                  <div className="flex items-center gap-1 shrink-0 relative z-60">
+                    {canManage && !isProtectedAdminRole(role) && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9"
+                        onClick={() => openEdit(role)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {canRemove && !role.isSystem && (
                       <Button
                         variant="ghost"
                         size="icon"
@@ -491,9 +537,17 @@ export function RolesModule() {
         )}
       </div>
 
+      <PaginationBar
+        page={page}
+        totalPages={totalPages}
+        totalItems={totalItems}
+        pageSize={pageSize}
+        onPageChange={setPage}
+      />
+
       {/* Create Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh]">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-auto">
           <DialogHeader>
             <DialogTitle>Nouveau rôle</DialogTitle>
             <DialogDescription>
@@ -517,9 +571,7 @@ export function RolesModule() {
             </div>
             <div className="space-y-2">
               <Label>Permissions</Label>
-              <ScrollArea className="max-h-72">
-                {renderPermGrid(createPerms, setCreatePerms)}
-              </ScrollArea>
+              {renderPermGrid(createPerms, setCreatePerms)}
             </div>
           </div>
           <DialogFooter>
@@ -542,7 +594,7 @@ export function RolesModule() {
 
       {/* Edit Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh]">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-auto">
           <DialogHeader>
             <DialogTitle>Modifier le rôle</DialogTitle>
             <DialogDescription>
@@ -565,9 +617,7 @@ export function RolesModule() {
             </div>
             <div className="space-y-2">
               <Label>Permissions</Label>
-              <ScrollArea className="max-h-72">
-                {renderPermGrid(editPerms, setEditPerms)}
-              </ScrollArea>
+              {renderPermGrid(editPerms, setEditPerms)}
             </div>
           </div>
           <DialogFooter>
@@ -590,7 +640,7 @@ export function RolesModule() {
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="overflow-auto max-h-[80vh]">
           <AlertDialogHeader>
             <AlertDialogTitle>Supprimer le rôle « {deleteRole?.name} » ?</AlertDialogTitle>
             <AlertDialogDescription>

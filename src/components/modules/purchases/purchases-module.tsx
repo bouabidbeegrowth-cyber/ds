@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '@/store/auth-store';
 import { canWrite, canDelete } from '@/lib/permissions';
+import { usePagination } from '@/hooks/use-pagination';
+import { PaginationBar } from '@/components/shared/pagination-bar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -54,7 +56,6 @@ interface PurchaseFormData {
   label: string;
   supplier: string;
   amount: string;
-  date: string;
   description: string;
 }
 
@@ -62,7 +63,6 @@ const emptyForm: PurchaseFormData = {
   label: '',
   supplier: '',
   amount: '',
-  date: '',
   description: '',
 };
 
@@ -128,11 +128,13 @@ export function PurchasesModule() {
     fetchPurchases(selectedMonth || undefined);
   }, [selectedMonth, fetchPurchases]);
 
+  const { page, setPage, pageItems: pagedPurchases, totalPages, totalItems, pageSize } = usePagination(purchases, 10);
+
   const totalAmount = purchases.reduce((sum, p) => sum + p.amount, 0);
 
   const openCreateDialog = () => {
     setEditingPurchase(null);
-    setFormData({ ...emptyForm, date: new Date().toISOString().split('T')[0] });
+    setFormData(emptyForm);
     setDialogOpen(true);
   };
 
@@ -142,7 +144,6 @@ export function PurchasesModule() {
       label: purchase.label,
       supplier: purchase.supplier || '',
       amount: String(purchase.amount),
-      date: new Date(purchase.date).toISOString().split('T')[0],
       description: purchase.description || '',
     });
     setDialogOpen(true);
@@ -154,7 +155,7 @@ export function PurchasesModule() {
   };
 
   const handleSubmit = async () => {
-    if (!formData.label.trim() || !formData.amount || !formData.date) return;
+    if (!formData.label.trim() || !formData.amount) return;
 
     setSubmitting(true);
     try {
@@ -162,7 +163,6 @@ export function PurchasesModule() {
         label: formData.label.trim(),
         supplier: formData.supplier.trim() || undefined,
         amount: Number(formData.amount),
-        date: new Date(formData.date).toISOString(),
         description: formData.description.trim() || undefined,
       };
 
@@ -335,7 +335,7 @@ export function PurchasesModule() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {purchases.map((purchase) => (
+                  {pagedPurchases.map((purchase) => (
                     <TableRow key={purchase.id}>
                       <TableCell className="pl-4 font-medium">
                         <div className="flex items-center gap-2">
@@ -412,9 +412,9 @@ export function PurchasesModule() {
 
           {/* Mobile Cards */}
           <div className="md:hidden space-y-3">
-            <ScrollArea className="max-h-[calc(100vh-320px)]">
+            <ScrollArea className="max-h-[calc(100vh-320px)] overflow-y-auto">
               <div className="space-y-3 pr-3">
-                {purchases.map((purchase) => (
+                {pagedPurchases.map((purchase) => (
                   <Card key={purchase.id} className="overflow-hidden">
                     <CardContent className="p-4 space-y-3">
                       <div className="flex items-start justify-between gap-2">
@@ -492,6 +492,14 @@ export function PurchasesModule() {
               </CardContent>
             </Card>
           </div>
+
+          <PaginationBar
+            page={page}
+            totalPages={totalPages}
+            totalItems={totalItems}
+            pageSize={pageSize}
+            onPageChange={setPage}
+          />
         </>
       )}
 
@@ -533,30 +541,18 @@ export function PurchasesModule() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="purchase-amount">Montant *</Label>
-                <Input
-                  id="purchase-amount"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={formData.amount}
-                  onChange={(e) => setFormData((f) => ({ ...f, amount: e.target.value }))}
-                  placeholder="0.00"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="purchase-date">Date *</Label>
-                <Input
-                  id="purchase-date"
-                  type="date"
-                  value={formData.date}
-                  onChange={(e) => setFormData((f) => ({ ...f, date: e.target.value }))}
-                  required
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="purchase-amount">Montant *</Label>
+              <Input
+                id="purchase-amount"
+                type="number"
+                min="0"
+                step="0.01"
+                value={formData.amount}
+                onChange={(e) => setFormData((f) => ({ ...f, amount: e.target.value }))}
+                placeholder="0.00"
+                required
+              />
             </div>
 
             <div className="space-y-2">
@@ -581,7 +577,7 @@ export function PurchasesModule() {
             </Button>
             <Button
               onClick={handleSubmit}
-              disabled={submitting || !formData.label.trim() || !formData.amount || !formData.date}
+              disabled={submitting || !formData.label.trim() || !formData.amount}
             >
               {submitting ? (
                 <div className="flex items-center gap-2">

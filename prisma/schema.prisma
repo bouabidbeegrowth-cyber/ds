@@ -26,11 +26,16 @@ model User {
   roleId      String?
   role        String        @default("EMPLOYEE") // DEPRECATED: kept for migration, use roleId instead
   active      Boolean       @default(true)
+  lastActiveAt DateTime?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
   roleRelation  Role?        @relation(fields: [roleId], references: [id])
   appointments  Appointment[]
+  journalEntries JournalEntry[]
+  sessionsOpened CashSession[] @relation("SessionOpenedBy")
+  sessionsClosed CashSession[] @relation("SessionClosedBy")
+  payments      Payment[]
 }
 
 model Client {
@@ -92,6 +97,7 @@ model AppointmentService {
 
 model Invoice {
   id              String   @id @default(cuid())
+  invoiceNumber   Int      @unique
   appointmentId   String   @unique
   clientId        String
   amount          Float
@@ -102,6 +108,7 @@ model Invoice {
 
   appointment Appointment @relation(fields: [appointmentId], references: [id])
   client      Client      @relation(fields: [clientId], references: [id])
+  payments    Payment[]
 }
 
 model Purchase {
@@ -111,8 +118,13 @@ model Purchase {
   amount      Float
   date        DateTime
   description String?
+  sessionId   String?  // set when recorded while a cash session was open — deducted from that session's total
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  session CashSession? @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId])
 }
 
 model Expense {
@@ -122,6 +134,65 @@ model Expense {
   amount      Float
   date        DateTime
   description String?
+  sessionId   String?  // set when recorded while a cash session was open — deducted from that session's total
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  session CashSession? @relation(fields: [sessionId], references: [id])
+
+  @@index([sessionId])
+}
+
+model JournalEntry {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorName  String
+  action     String
+  entity     String
+  entityId   String?
+  details    String?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([actorId])
+  @@index([action])
+}
+
+model CashSession {
+  id            String    @id @default(cuid())
+  openedAt      DateTime  @default(now())
+  closedAt      DateTime?
+  openedById    String
+  closedById    String?
+  openingAmount Float     @default(0)
+  closingAmount Float?
+  status        String    @default("OUVERTE") // OUVERTE, FERMEE
+  notes         String?
+
+  openedBy User @relation("SessionOpenedBy", fields: [openedById], references: [id])
+  closedBy User? @relation("SessionClosedBy", fields: [closedById], references: [id])
+  payments  Payment[]
+  purchases Purchase[]
+  expenses  Expense[]
+
+  @@index([status])
+  @@index([openedAt])
+}
+
+model Payment {
+  id        String   @id @default(cuid())
+  invoiceId String
+  sessionId String
+  amount    Float
+  actorId   String
+  createdAt DateTime @default(now())
+
+  invoice Invoice     @relation(fields: [invoiceId], references: [id])
+  session CashSession @relation(fields: [sessionId], references: [id])
+  actor   User   @relation(fields: [actorId], references: [id])
+
+  @@index([sessionId])
+  @@index([invoiceId])
 }

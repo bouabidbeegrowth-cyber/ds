@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuthStore } from '@/store/auth-store';
 import { canWrite, canDelete } from '@/lib/permissions';
 import { useToast } from '@/hooks/use-toast';
+import { usePagination } from '@/hooks/use-pagination';
+import { PaginationBar } from '@/components/shared/pagination-bar';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,7 +32,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Pencil, Trash2, Sparkles, Clock, DollarSign } from 'lucide-react';
+import { Plus, Pencil, Trash2, Sparkles, Clock, Search } from 'lucide-react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -83,6 +85,9 @@ export function ServicesModule() {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -94,12 +99,25 @@ export function ServicesModule() {
   const [deletingService, setDeletingService] = useState<Service | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   // ── Fetch services ─────────────────────────────────────────────────────────
 
   const fetchServices = useCallback(async () => {
+    setLoading(true);
     try {
       const token = localStorage.getItem('ds_token');
-      const res = await fetch('/api/services', {
+      const params = new URLSearchParams();
+      if (debouncedQuery) params.set('q', debouncedQuery);
+      if (statusFilter === 'active') params.set('active', 'true');
+      if (statusFilter === 'inactive') params.set('active', 'false');
+      const url = `/api/services${params.toString() ? `?${params.toString()}` : ''}`;
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error('Erreur de chargement');
@@ -110,11 +128,13 @@ export function ServicesModule() {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, debouncedQuery, statusFilter]);
 
   useEffect(() => {
     fetchServices();
   }, [fetchServices]);
+
+  const { page, setPage, pageItems: pagedServices, totalPages, totalItems, pageSize } = usePagination(services, 12);
 
   // ── Dialog helpers ─────────────────────────────────────────────────────────
 
@@ -141,13 +161,24 @@ export function ServicesModule() {
     e.preventDefault();
     if (!form.name.trim() || !form.price || !form.duration) return;
 
+    const priceValue = Number(form.price);
+    const durationValue = Number(form.duration);
+    if (!Number.isInteger(priceValue) || priceValue < 0 || !Number.isInteger(durationValue) || durationValue < 1) {
+      toast({
+        title: 'Erreur',
+        description: 'Le prix doit être un nombre entier positif et la durée doit être un entier valide.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setSubmitting(true);
     try {
       const token = localStorage.getItem('ds_token');
       const body: Record<string, unknown> = {
         name: form.name.trim(),
-        price: Number(form.price),
-        duration: Number(form.duration),
+        price: priceValue,
+        duration: durationValue,
         description: form.description.trim() || undefined,
       };
 
@@ -188,6 +219,12 @@ export function ServicesModule() {
       setSubmitting(false);
     }
   }
+
+  const filteredCountLabel = statusFilter === 'all'
+    ? 'Tous'
+    : statusFilter === 'active'
+      ? 'Actifs'
+      : 'Inactifs';
 
   // ── Toggle active ─────────────────────────────────────────────────────────
 
@@ -306,6 +343,44 @@ export function ServicesModule() {
         )}
       </div>
 
+      {/* ── Search & Filters ─────────────────────────────────────────────── */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="relative w-full max-w-md">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Rechercher par nom ou description..."
+            className="pl-9"
+          />
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {[
+            { key: 'all', label: 'Tous' },
+            { key: 'active', label: 'Actifs' },
+            { key: 'inactive', label: 'Inactifs' },
+          ].map((item) => {
+            const isActive = statusFilter === item.key;
+            return (
+              <Button
+                key={item.key}
+                type="button"
+                variant={isActive ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setStatusFilter(item.key as typeof statusFilter)}
+              >
+                {item.label}
+              </Button>
+            );
+          })}
+        </div>
+      </div>
+
+      <p className="text-sm text-muted-foreground">
+        Affichage {filteredCountLabel.toLowerCase()} · {services.length} résultat{services.length !== 1 ? 's' : ''}
+      </p>
+
       {/* ── Services grid ──────────────────────────────────────────────────── */}
       {services.length === 0 ? (
         <Card className="flex flex-col items-center justify-center py-16">
@@ -319,7 +394,7 @@ export function ServicesModule() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {services.map((service) => (
+          {pagedServices.map((service) => (
             <Card
               key={service.id}
               className={`py-5 transition-all duration-200 hover:shadow-md ${
@@ -347,10 +422,7 @@ export function ServicesModule() {
               <CardContent className="space-y-3">
                 {/* Price & Duration */}
                 <div className="flex flex-wrap items-center gap-3 text-sm">
-                  <span className="inline-flex items-center gap-1.5 font-semibold text-primary">
-                    <DollarSign className="size-3.5" />
-                    {formatPrice(service.price)}
-                  </span>
+                  <span className="font-semibold text-primary">{formatPrice(service.price)}</span>
                   <span className="inline-flex items-center gap-1.5 text-muted-foreground">
                     <Clock className="size-3.5" />
                     {formatDuration(service.duration)}
@@ -405,6 +477,14 @@ export function ServicesModule() {
         </div>
       )}
 
+      <PaginationBar
+        page={page}
+        totalPages={totalPages}
+        totalItems={totalItems}
+        pageSize={pageSize}
+        onPageChange={setPage}
+      />
+
       {/* ── Create / Edit Dialog ────────────────────────────────────────────── */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
@@ -443,10 +523,16 @@ export function ServicesModule() {
                     id="service-price"
                     type="number"
                     min={0}
-                    step={100}
+                    step={1}
+                    inputMode="numeric"
                     placeholder="0"
                     value={form.price}
-                    onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (value === '' || /^\d+$/.test(value)) {
+                        setForm((f) => ({ ...f, price: value }));
+                      }
+                    }}
                     required
                     className="pr-10"
                   />

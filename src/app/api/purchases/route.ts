@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { verifyAuth, requirePermission } from '@/lib/auth';
+import { logAudit } from '@/lib/audit';
 
 export async function GET(req: NextRequest) {
   const auth = await verifyAuth(req);
@@ -35,20 +36,37 @@ export async function POST(req: NextRequest) {
   if (permCheck) return permCheck;
 
   const body = await req.json();
-  const { label, supplier, amount, date, description } = body;
+  const { label, supplier, amount, description } = body;
 
-  if (!label || amount == null || !date) {
-    return NextResponse.json({ error: 'Label, montant et date sont requis' }, { status: 400 });
+  if (!label || amount == null) {
+    return NextResponse.json({ error: 'Label et montant sont requis' }, { status: 400 });
   }
+
+  // The date is always "now" — it records when the purchase was made, not a
+  // user-editable field.
+  const now = new Date();
+
+  // If a cash session is currently open, this purchase is assumed paid from the
+  // till and is deducted from that session's total.
+  const openSession = await db.cashSession.findFirst({ where: { status: 'OUVERTE' } });
 
   const purchase = await db.purchase.create({
     data: {
       label,
       supplier: supplier || null,
       amount: Number(amount),
-      date: new Date(date),
+      date: now,
       description: description || null,
+      sessionId: openSession?.id ?? null,
     },
+  });
+
+  await logAudit({
+    actor: auth.user,
+    action: 'CREATE',
+    entity: 'purchase',
+    entityId: purchase.id,
+    details: { label, amount: Number(amount) },
   });
 
   return NextResponse.json(purchase, { status: 201 });
@@ -67,15 +85,23 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'ID est requis' }, { status: 400 });
   }
 
+  // The date is never editable — it stays fixed to when the purchase was made.
   const purchase = await db.purchase.update({
     where: { id },
     data: {
       ...(data.label !== undefined && { label: data.label }),
       ...(data.supplier !== undefined && { supplier: data.supplier || null }),
       ...(data.amount !== undefined && { amount: Number(data.amount) }),
-      ...(data.date !== undefined && { date: new Date(data.date) }),
       ...(data.description !== undefined && { description: data.description || null }),
     },
+  });
+
+  await logAudit({
+    actor: auth.user,
+    action: 'UPDATE',
+    entity: 'purchase',
+    entityId: purchase.id,
+    details: { label: purchase.label, amount: purchase.amount, date: purchase.date.toISOString() },
   });
 
   return NextResponse.json(purchase);
@@ -95,6 +121,13 @@ export async function DELETE(req: NextRequest) {
   }
 
   await db.purchase.delete({ where: { id } });
+
+  await logAudit({
+    actor: auth.user,
+    action: 'DELETE',
+    entity: 'purchase',
+    entityId: id,
+  });
 
   return NextResponse.json({ success: true });
 }

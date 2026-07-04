@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { verifyAuth, requirePermission } from '@/lib/auth';
+import { logAudit } from '@/lib/audit';
 
 export async function GET(req: NextRequest) {
   const auth = await verifyAuth(req);
@@ -40,10 +41,10 @@ export async function POST(req: NextRequest) {
   if (permCheck) return permCheck;
 
   const body = await req.json();
-  const { label, category, amount, date, description } = body;
+  const { label, category, amount, description } = body;
 
-  if (!label || !category || amount == null || !date) {
-    return NextResponse.json({ error: 'Label, catégorie, montant et date sont requis' }, { status: 400 });
+  if (!label || !category || amount == null) {
+    return NextResponse.json({ error: 'Label, catégorie et montant sont requis' }, { status: 400 });
   }
 
   const validCategories = ['LOYER', 'ELECTRICITE', 'SALAIRES', 'FOURNITURES', 'AUTRE'];
@@ -51,14 +52,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Catégorie invalide' }, { status: 400 });
   }
 
+  // The date is always "now" — it records when the expense was made, not a
+  // user-editable field.
+  const now = new Date();
+
+  // If a cash session is currently open, this expense is assumed paid from the
+  // till and is deducted from that session's total.
+  const openSession = await db.cashSession.findFirst({ where: { status: 'OUVERTE' } });
+
   const expense = await db.expense.create({
     data: {
       label,
       category,
       amount: Number(amount),
-      date: new Date(date),
+      date: now,
       description: description || null,
+      sessionId: openSession?.id ?? null,
     },
+  });
+
+  await logAudit({
+    actor: auth.user,
+    action: 'CREATE',
+    entity: 'expense',
+    entityId: expense.id,
+    details: { label, category, amount: Number(amount) },
   });
 
   return NextResponse.json(expense, { status: 201 });
@@ -84,15 +102,23 @@ export async function PUT(req: NextRequest) {
     }
   }
 
+  // The date is never editable — it stays fixed to when the expense was made.
   const expense = await db.expense.update({
     where: { id },
     data: {
       ...(data.label !== undefined && { label: data.label }),
       ...(data.category !== undefined && { category: data.category }),
       ...(data.amount !== undefined && { amount: Number(data.amount) }),
-      ...(data.date !== undefined && { date: new Date(data.date) }),
       ...(data.description !== undefined && { description: data.description || null }),
     },
+  });
+
+  await logAudit({
+    actor: auth.user,
+    action: 'UPDATE',
+    entity: 'expense',
+    entityId: expense.id,
+    details: { label: expense.label, category: expense.category, amount: expense.amount, date: expense.date.toISOString() },
   });
 
   return NextResponse.json(expense);
@@ -112,6 +138,13 @@ export async function DELETE(req: NextRequest) {
   }
 
   await db.expense.delete({ where: { id } });
+
+  await logAudit({
+    actor: auth.user,
+    action: 'DELETE',
+    entity: 'expense',
+    entityId: id,
+  });
 
   return NextResponse.json({ success: true });
 }

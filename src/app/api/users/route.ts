@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { verifyAuth, requirePermission } from '@/lib/auth';
+import { logAudit } from '@/lib/audit';
 
 async function hashPassword(password: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -89,6 +90,14 @@ export async function POST(req: NextRequest) {
     },
   });
 
+  await logAudit({
+    actor: auth.user,
+    action: 'CREATE',
+    entity: 'user',
+    entityId: user.id,
+    details: { username, name, roleId },
+  });
+
   return NextResponse.json(user, { status: 201 });
 }
 
@@ -139,6 +148,14 @@ export async function PUT(req: NextRequest) {
     },
   });
 
+  await logAudit({
+    actor: auth.user,
+    action: 'UPDATE',
+    entity: 'user',
+    entityId: user.id,
+    details: { username: user.username, name: user.name, active: user.active, roleId: user.roleId },
+  });
+
   return NextResponse.json(user);
 }
 
@@ -170,6 +187,14 @@ export async function DELETE(req: NextRequest) {
       updatedAt: true,
       roleRelation: { select: { id: true, name: true } },
     },
+  });
+
+  await logAudit({
+    actor: auth.user,
+    action: 'DELETE',
+    entity: 'user',
+    entityId: user.id,
+    details: { username: user.username, active: user.active },
   });
 
   return NextResponse.json(user);

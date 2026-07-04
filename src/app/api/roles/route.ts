@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { verifyAuth, requirePermission } from '@/lib/auth';
 import { parsePermissions, serializePermissions, type Permissions, ALL_MODULES, DEFAULT_PERMISSIONS } from '@/lib/permissions';
+import { logAudit } from '@/lib/audit';
 
 export async function GET(req: NextRequest) {
   const auth = await verifyAuth(req);
@@ -10,6 +11,10 @@ export async function GET(req: NextRequest) {
   // Only users with full access to 'users' module can manage roles
   const permCheck = requirePermission(auth.user, 'users', 'read');
   if (permCheck) return permCheck;
+
+  // Extract search query parameter
+  const { searchParams } = new URL(req.url);
+  const q = searchParams.get('q')?.trim().toLowerCase() || '';
 
   const roles = await db.role.findMany({
     include: {
@@ -20,7 +25,12 @@ export async function GET(req: NextRequest) {
     orderBy: { createdAt: 'asc' },
   });
 
-  const formatted = roles.map((role) => ({
+  // Filter by search query if provided
+  const filtered = q
+    ? roles.filter((role) => role.name.toLowerCase().includes(q))
+    : roles;
+
+  const formatted = filtered.map((role) => ({
     id: role.id,
     name: role.name,
     permissions: parsePermissions(role.permissions),
@@ -69,6 +79,14 @@ export async function POST(req: NextRequest) {
       permissions: serializePermissions(perms),
       isSystem: false,
     },
+  });
+
+  await logAudit({
+    actor: auth.user,
+    action: 'CREATE',
+    entity: 'role',
+    entityId: role.id,
+    details: { name: role.name },
   });
 
   return NextResponse.json({
@@ -137,6 +155,14 @@ export async function PUT(req: NextRequest) {
     },
   });
 
+  await logAudit({
+    actor: auth.user,
+    action: 'UPDATE',
+    entity: 'role',
+    entityId: role.id,
+    details: { name: role.name },
+  });
+
   return NextResponse.json({
     id: role.id,
     name: role.name,
@@ -183,6 +209,14 @@ export async function DELETE(req: NextRequest) {
   }
 
   await db.role.delete({ where: { id } });
+
+  await logAudit({
+    actor: auth.user,
+    action: 'DELETE',
+    entity: 'role',
+    entityId: id,
+    details: { name: role.name },
+  });
 
   return NextResponse.json({ success: true });
 }

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Permissions } from '@/lib/permissions';
+import { toast } from '@/hooks/use-toast';
 
 interface User {
   id: string;
@@ -54,8 +55,33 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 }));
 
+let sessionWatcherInstalled = false;
+
+// Any API call returning 401 while we believe we're logged in means the
+// session died server-side (e.g. the 2h inactivity timeout) — log out
+// client-side too instead of leaving the UI stuck with raw error banners.
+function installSessionExpiryWatcher() {
+  if (sessionWatcherInstalled || typeof window === 'undefined') return;
+  sessionWatcherInstalled = true;
+
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = async (...args) => {
+    const response = await originalFetch(...args);
+    if (response.status === 401 && useAuthStore.getState().isAuthenticated) {
+      useAuthStore.getState().logout();
+      toast({
+        title: 'Session expirée',
+        description: 'Veuillez vous reconnecter.',
+        variant: 'destructive',
+      });
+    }
+    return response;
+  };
+}
+
 export function initializeAuth() {
   if (typeof window === 'undefined') return;
+  installSessionExpiryWatcher();
   const userStr = localStorage.getItem('ds_user');
   const token = localStorage.getItem('ds_token');
   if (userStr && token) {

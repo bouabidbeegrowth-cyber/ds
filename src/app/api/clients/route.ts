@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { verifyAuth, requirePermission } from '@/lib/auth';
+import { isAlgerianPhoneNumber } from '@/lib/phone';
+import { logAudit } from '@/lib/audit';
 
 export async function GET(req: NextRequest) {
   const auth = await verifyAuth(req);
@@ -40,8 +42,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Prénom et nom sont requis' }, { status: 400 });
   }
 
+  if (phone && !isAlgerianPhoneNumber(phone)) {
+    return NextResponse.json({ error: 'Numéro algérien invalide' }, { status: 400 });
+  }
+
   const client = await db.client.create({
     data: { firstName, lastName, phone: phone || null, email: email || null, address: address || null, remarks: remarks || null },
+  });
+
+  await logAudit({
+    actor: auth.user,
+    action: 'CREATE',
+    entity: 'client',
+    entityId: client.id,
+    details: { firstName, lastName },
   });
 
   return NextResponse.json(client, { status: 201 });
@@ -60,6 +74,10 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'ID est requis' }, { status: 400 });
   }
 
+  if (data.phone !== undefined && data.phone && !isAlgerianPhoneNumber(data.phone)) {
+    return NextResponse.json({ error: 'Numéro algérien invalide' }, { status: 400 });
+  }
+
   const client = await db.client.update({
     where: { id },
     data: {
@@ -70,6 +88,14 @@ export async function PUT(req: NextRequest) {
       ...(data.address !== undefined && { address: data.address || null }),
       ...(data.remarks !== undefined && { remarks: data.remarks || null }),
     },
+  });
+
+  await logAudit({
+    actor: auth.user,
+    action: 'UPDATE',
+    entity: 'client',
+    entityId: client.id,
+    details: { firstName: client.firstName, lastName: client.lastName },
   });
 
   return NextResponse.json(client);
@@ -89,6 +115,13 @@ export async function DELETE(req: NextRequest) {
   }
 
   await db.client.delete({ where: { id } });
+
+  await logAudit({
+    actor: auth.user,
+    action: 'DELETE',
+    entity: 'client',
+    entityId: id,
+  });
 
   return NextResponse.json({ success: true });
 }

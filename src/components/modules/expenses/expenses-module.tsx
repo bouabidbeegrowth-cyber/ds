@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuthStore } from '@/store/auth-store';
 import { canWrite, canDelete } from '@/lib/permissions';
+import { usePagination } from '@/hooks/use-pagination';
+import { PaginationBar } from '@/components/shared/pagination-bar';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -74,7 +76,6 @@ interface ExpenseFormData {
   label: string;
   category: CategoryKey | '';
   amount: string;
-  date: string;
   description: string;
 }
 
@@ -94,7 +95,6 @@ const EMPTY_FORM: ExpenseFormData = {
   label: '',
   category: '',
   amount: '',
-  date: '',
   description: '',
 };
 
@@ -166,6 +166,8 @@ export function ExpensesModule() {
     fetchExpenses();
   }, [fetchExpenses]);
 
+  const { page, setPage, pageItems: pagedExpenses, totalPages, totalItems, pageSize } = usePagination(expenses, 10);
+
   // ─── Summary calculations ────────────────────────────────────────────
 
   const summary = useMemo(() => {
@@ -187,7 +189,7 @@ export function ExpensesModule() {
 
   const openCreateDialog = () => {
     setEditingId(null);
-    setFormData({ ...EMPTY_FORM, date: new Date().toISOString().split('T')[0] });
+    setFormData(EMPTY_FORM);
     setFormOpen(true);
   };
 
@@ -197,7 +199,6 @@ export function ExpensesModule() {
       label: expense.label,
       category: expense.category,
       amount: String(expense.amount),
-      date: expense.date.split('T')[0],
       description: expense.description ?? '',
     });
     setFormOpen(true);
@@ -215,7 +216,7 @@ export function ExpensesModule() {
   // ─── Submit handlers ─────────────────────────────────────────────────
 
   const handleSubmit = async () => {
-    if (!formData.label.trim() || !formData.category || !formData.amount || !formData.date) return;
+    if (!formData.label.trim() || !formData.category || !formData.amount) return;
 
     setFormSubmitting(true);
     try {
@@ -224,7 +225,6 @@ export function ExpensesModule() {
         label: formData.label.trim(),
         category: formData.category,
         amount: parseFloat(formData.amount),
-        date: new Date(formData.date + 'T00:00:00').toISOString(),
       };
       if (formData.description.trim()) {
         body.description = formData.description.trim();
@@ -416,7 +416,7 @@ export function ExpensesModule() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {expenses.map((expense) => {
+                  {pagedExpenses.map((expense) => {
                     const cat = CATEGORY_MAP[expense.category];
                     return (
                       <TableRow key={expense.id}>
@@ -488,6 +488,13 @@ export function ExpensesModule() {
               </Table>
             </ScrollArea>
           )}
+          <PaginationBar
+            page={page}
+            totalPages={totalPages}
+            totalItems={totalItems}
+            pageSize={pageSize}
+            onPageChange={setPage}
+          />
         </CardContent>
       </Card>
 
@@ -537,29 +544,18 @@ export function ExpensesModule() {
               </Select>
             </div>
 
-            {/* Montant + Date row */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="exp-amount">Montant</Label>
-                <Input
-                  id="exp-amount"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={formData.amount}
-                  onChange={(e) => handleFormChange('amount', e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="exp-date">Date</Label>
-                <Input
-                  id="exp-date"
-                  type="date"
-                  value={formData.date}
-                  onChange={(e) => handleFormChange('date', e.target.value)}
-                />
-              </div>
+            {/* Montant */}
+            <div className="space-y-2">
+              <Label htmlFor="exp-amount">Montant</Label>
+              <Input
+                id="exp-amount"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={formData.amount}
+                onChange={(e) => handleFormChange('amount', e.target.value)}
+              />
             </div>
 
             {/* Description */}
@@ -589,8 +585,7 @@ export function ExpensesModule() {
                 formSubmitting ||
                 !formData.label.trim() ||
                 !formData.category ||
-                !formData.amount ||
-                !formData.date
+                !formData.amount
               }
             >
               {formSubmitting ? 'Enregistrement…' : editingId ? 'Modifier' : 'Enregistrer'}

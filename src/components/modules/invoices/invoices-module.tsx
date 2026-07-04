@@ -1,17 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { usePagination } from '@/hooks/use-pagination';
+import { PaginationBar } from '@/components/shared/pagination-bar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -43,12 +38,15 @@ import {
   X,
   AlertCircle,
   Eye,
+  Download,
 } from 'lucide-react';
+import { generateInvoicePDF } from '@/lib/invoice-pdf';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 interface ServiceData {
   name: string;
+  price: number;
 }
 
 interface AppointmentData {
@@ -58,10 +56,14 @@ interface AppointmentData {
 interface ClientData {
   firstName: string;
   lastName: string;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
 }
 
 interface Invoice {
   id: string;
+  invoiceNumber: number;
   clientId: string;
   appointmentId: string;
   amount: number;
@@ -83,8 +85,8 @@ const formatAmount = (value: number): string =>
     maximumFractionDigits: 2,
   }).format(value) + ' DA';
 
-const getInvoiceNumber = (id: string): string =>
-  'FAC-' + id.substring(0, 8).toUpperCase();
+const getInvoiceNumber = (invoiceNumber: number): string =>
+  'FAC-' + String(invoiceNumber).padStart(6, '0');
 
 const formatDate = (iso: string): string => {
   const d = new Date(iso);
@@ -116,7 +118,6 @@ export function InvoicesModule() {
   // Payment dialog
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
-  const [editStatus, setEditStatus] = useState<string>('');
   const [editPaidAmount, setEditPaidAmount] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -172,11 +173,12 @@ export function InvoicesModule() {
     });
   }, [invoices, searchQuery]);
 
+  const { page, setPage, pageItems: pagedInvoices, totalPages, totalItems, pageSize } = usePagination(filteredInvoices, 10);
+
   // ── Open payment dialog ───────────────────────────────────────────────
 
   const handleOpenDialog = (invoice: Invoice) => {
     setSelectedInvoice(invoice);
-    setEditStatus(invoice.status);
     setEditPaidAmount(String(invoice.paidAmount));
     setSaveError('');
     setDialogOpen(true);
@@ -197,13 +199,10 @@ export function InvoicesModule() {
         return;
       }
 
-      const body: { id: string; status?: string; paidAmount?: number } = {
+      const body: { id: string; paidAmount?: number } = {
         id: selectedInvoice.id,
       };
 
-      if (editStatus !== selectedInvoice.status) {
-        body.status = editStatus;
-      }
       if (Number(editPaidAmount) !== selectedInvoice.paidAmount) {
         body.paidAmount = Number(editPaidAmount);
       }
@@ -236,6 +235,15 @@ export function InvoicesModule() {
   const remainingAmount = useMemo(() => {
     if (!selectedInvoice) return 0;
     return selectedInvoice.amount - Number(editPaidAmount || 0);
+  }, [selectedInvoice, editPaidAmount]);
+
+  // Payment status is always derived from the paid amount — never chosen manually.
+  const previewStatus = useMemo(() => {
+    if (!selectedInvoice) return 'NON_PAYEE';
+    const paid = Number(editPaidAmount || 0);
+    if (paid <= 0) return 'NON_PAYEE';
+    if (paid >= selectedInvoice.amount) return 'PAYEE';
+    return 'PARTIELLEMENT_PAYEE';
   }, [selectedInvoice, editPaidAmount]);
 
   // ── Status badge renderer ─────────────────────────────────────────────
@@ -439,79 +447,170 @@ export function InvoicesModule() {
               </p>
             </div>
           ) : (
-            <ScrollArea className="max-h-[500px]">
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="px-4">N°</TableHead>
-                    <TableHead className="px-4">Client</TableHead>
-                    <TableHead className="px-4">Service</TableHead>
-                    <TableHead className="px-4 text-right">Montant</TableHead>
-                    <TableHead className="px-4 text-right">Payé</TableHead>
-                    <TableHead className="px-4 text-right">Reste</TableHead>
-                    <TableHead className="px-4">Statut</TableHead>
-                    <TableHead className="px-4">Date</TableHead>
-                    <TableHead className="px-4 text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredInvoices.map((invoice) => {
-                    const reste =
-                      invoice.amount - invoice.paidAmount;
-                    return (
-                      <TableRow key={invoice.id}>
-                        <TableCell className="px-4 font-mono text-xs font-medium text-muted-foreground">
-                          {getInvoiceNumber(invoice.id)}
-                        </TableCell>
-                        <TableCell className="px-4 font-medium">
-                          {invoice.client.firstName}{' '}
-                          {invoice.client.lastName}
-                        </TableCell>
-                        <TableCell className="px-4 text-muted-foreground">
-                          {invoice.appointment.services.map((as: { service: { name: string } }) => as.service.name).join(', ')}
-                        </TableCell>
-                        <TableCell className="px-4 text-right font-medium">
-                          {formatAmount(invoice.amount)}
-                        </TableCell>
-                        <TableCell className="px-4 text-right text-emerald-600">
-                          {formatAmount(invoice.paidAmount)}
-                        </TableCell>
-                        <TableCell
-                          className={`px-4 text-right font-medium ${
-                            reste > 0
-                              ? 'text-red-600'
-                              : 'text-muted-foreground'
-                          }`}
-                        >
-                          {formatAmount(reste)}
-                        </TableCell>
-                        <TableCell className="px-4">
-                          <StatusBadge status={invoice.status} />
-                        </TableCell>
-                        <TableCell className="px-4 text-muted-foreground text-xs">
-                          {formatDate(invoice.createdAt)}
-                        </TableCell>
-                        <TableCell className="px-4 text-right">
-                          {canWrite(user?.permissions?.invoices) && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            onClick={() => handleOpenDialog(invoice)}
+            <>
+              {/* Desktop table */}
+              <ScrollArea className="hidden max-h-[500px] overflow-y-auto md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="px-4">N°</TableHead>
+                      <TableHead className="px-4">Client</TableHead>
+                      <TableHead className="px-4">Service</TableHead>
+                      <TableHead className="px-4 text-right">Montant</TableHead>
+                      <TableHead className="px-4 text-right">Payé</TableHead>
+                      <TableHead className="px-4 text-right">Reste</TableHead>
+                      <TableHead className="px-4">Statut</TableHead>
+                      <TableHead className="px-4">Date</TableHead>
+                      <TableHead className="px-4 text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {pagedInvoices.map((invoice) => {
+                      const reste =
+                        invoice.amount - invoice.paidAmount;
+                      return (
+                        <TableRow key={invoice.id}>
+                          <TableCell className="px-4 font-mono text-xs font-medium text-muted-foreground">
+                            {getInvoiceNumber(invoice.invoiceNumber)}
+                          </TableCell>
+                          <TableCell className="px-4 font-medium">
+                            {invoice.client.firstName}{' '}
+                            {invoice.client.lastName}
+                          </TableCell>
+                          <TableCell className="px-4 text-muted-foreground">
+                            {invoice.appointment.services.map((as: { service: { name: string } }) => as.service.name).join(', ')}
+                          </TableCell>
+                          <TableCell className="px-4 text-right font-medium">
+                            {formatAmount(invoice.amount)}
+                          </TableCell>
+                          <TableCell className="px-4 text-right text-emerald-600">
+                            {formatAmount(invoice.paidAmount)}
+                          </TableCell>
+                          <TableCell
+                            className={`px-4 text-right font-medium ${
+                              reste > 0
+                                ? 'text-red-600'
+                                : 'text-muted-foreground'
+                            }`}
                           >
-                            <Eye className="h-4 w-4" />
-                            <span className="sr-only">
-                              Voir / modifier
-                            </span>
+                            {formatAmount(reste)}
+                          </TableCell>
+                          <TableCell className="px-4">
+                            <StatusBadge status={invoice.status} />
+                          </TableCell>
+                          <TableCell className="px-4 text-muted-foreground text-xs">
+                            {formatDate(invoice.createdAt)}
+                          </TableCell>
+                          <TableCell className="px-4 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => generateInvoicePDF(invoice)}
+                                title="Télécharger le PDF"
+                              >
+                                <Download className="h-4 w-4" />
+                                <span className="sr-only">Télécharger le PDF</span>
+                              </Button>
+                              {canWrite(user?.permissions?.invoices) && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => handleOpenDialog(invoice)}
+                                title="Voir / modifier"
+                              >
+                                <Eye className="h-4 w-4" />
+                                <span className="sr-only">
+                                  Voir / modifier
+                                </span>
+                              </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+
+              {/* Mobile cards */}
+              <div className="space-y-3 px-4 pb-4 md:hidden">
+                {pagedInvoices.map((invoice) => {
+                  const reste = invoice.amount - invoice.paidAmount;
+                  return (
+                    <Card key={invoice.id} className="p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-mono text-xs font-medium text-muted-foreground">
+                            {getInvoiceNumber(invoice.invoiceNumber)}
+                          </p>
+                          <p className="truncate font-medium">
+                            {invoice.client.firstName} {invoice.client.lastName}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {invoice.appointment.services.map((as: { service: { name: string } }) => as.service.name).join(', ')}
+                          </p>
+                        </div>
+                        <StatusBadge status={invoice.status} />
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-3 gap-2 rounded-md bg-muted/50 p-2 text-center text-xs">
+                        <div>
+                          <p className="text-muted-foreground">Montant</p>
+                          <p className="font-medium">{formatAmount(invoice.amount)}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Payé</p>
+                          <p className="font-medium text-emerald-600">{formatAmount(invoice.paidAmount)}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Reste</p>
+                          <p className={`font-medium ${reste > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
+                            {formatAmount(reste)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex items-center justify-between">
+                        <p className="text-xs text-muted-foreground">{formatDate(invoice.createdAt)}</p>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs"
+                            onClick={() => generateInvoicePDF(invoice)}
+                          >
+                            <Download className="h-3.5 w-3.5 mr-1" />
+                            PDF
                           </Button>
+                          {canWrite(user?.permissions?.invoices) && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs"
+                              onClick={() => handleOpenDialog(invoice)}
+                            >
+                              <Eye className="h-3.5 w-3.5 mr-1" />
+                              Voir
+                            </Button>
                           )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </ScrollArea>
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+              <PaginationBar
+                page={page}
+                totalPages={totalPages}
+                totalItems={totalItems}
+                pageSize={pageSize}
+                onPageChange={setPage}
+              />
+            </>
           )}
         </CardContent>
       </Card>
@@ -539,7 +638,7 @@ export function InvoicesModule() {
                       N° Facture
                     </p>
                     <p className="font-mono font-medium">
-                      {getInvoiceNumber(selectedInvoice.id)}
+                      {getInvoiceNumber(selectedInvoice.invoiceNumber)}
                     </p>
                   </div>
                   <div>
@@ -576,24 +675,15 @@ export function InvoicesModule() {
                 </div>
               </div>
 
-              {/* Status */}
+              {/* Status (derived automatically from paid amount, not editable) */}
               <div className="space-y-2">
                 <Label>Statut de paiement</Label>
-                <Select
-                  value={editStatus}
-                  onValueChange={setEditStatus}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Sélectionner le statut" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="PAYEE">Payée</SelectItem>
-                    <SelectItem value="NON_PAYEE">Non payée</SelectItem>
-                    <SelectItem value="PARTIELLEMENT_PAYEE">
-                      Partiellement payée
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={previewStatus} />
+                  <span className="text-xs text-muted-foreground">
+                    Calculé automatiquement selon le montant payé
+                  </span>
+                </div>
               </div>
 
               {/* Paid amount */}
@@ -644,6 +734,16 @@ export function InvoicesModule() {
           )}
 
           <DialogFooter className="gap-2 sm:gap-0">
+            {selectedInvoice && (
+              <Button
+                variant="outline"
+                onClick={() => generateInvoicePDF(selectedInvoice)}
+                className="sm:mr-auto"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                PDF
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={() => setDialogOpen(false)}

@@ -13,6 +13,9 @@ export interface AuthUser {
   isSystemAdmin: boolean;
 }
 
+// Sessions expire after this long without any authenticated request.
+export const SESSION_TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2 hours
+
 export async function verifyAuth(req: NextRequest): Promise<{ user: AuthUser; error?: never } | { error: NextResponse }> {
   const token = req.headers.get('Authorization')?.replace('Bearer ', '');
   if (!token) {
@@ -41,6 +44,16 @@ export async function verifyAuth(req: NextRequest): Promise<{ user: AuthUser; er
     if (!user || !user.active) {
       return { error: NextResponse.json({ error: 'Utilisateur invalide' }, { status: 401 }) };
     }
+
+    if (user.lastActiveAt && Date.now() - user.lastActiveAt.getTime() > SESSION_TIMEOUT_MS) {
+      return { error: NextResponse.json({ error: 'Session expirée. Veuillez vous reconnecter.' }, { status: 401 }) };
+    }
+
+    // Sliding expiration: mark this request as activity, resetting the 2h window.
+    await db.user.update({
+      where: { id: userId },
+      data: { lastActiveAt: new Date() },
+    });
 
     // Fallback: if user has no role assigned, assign default employee role
     let roleId = user.roleId;

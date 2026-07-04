@@ -60,6 +60,9 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth-store';
 import { canWrite, canDelete } from '@/lib/permissions';
+import { isAlgerianPhoneNumber } from '@/lib/phone';
+import { usePagination } from '@/hooks/use-pagination';
+import { PaginationBar } from '@/components/shared/pagination-bar';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
@@ -97,7 +100,14 @@ interface Invoice {
 const clientFormSchema = z.object({
   firstName: z.string().min(1, 'Le prénom est requis'),
   lastName: z.string().min(1, 'Le nom est requis'),
-  phone: z.string().optional().or(z.literal('')),
+  phone: z
+    .string()
+    .optional()
+    .or(z.literal(''))
+    .refine(
+      (val) => !val || isAlgerianPhoneNumber(val),
+      'Numéro algérien invalide'
+    ),
   email: z
     .string()
     .optional()
@@ -857,6 +867,8 @@ export function ClientsModule() {
     fetchClients();
   }, [fetchClients]);
 
+  const { page, setPage, pageItems: pagedClients, totalPages, totalItems, pageSize } = usePagination(clients, 10);
+
   // ── Handlers ──
   const handleCreateNew = () => {
     setEditingClient(null);
@@ -947,7 +959,7 @@ export function ClientsModule() {
           {/* Desktop table (hidden on mobile) */}
           <div className="hidden md:block">
             <ClientTable
-              clients={clients}
+              clients={pagedClients}
               onEdit={handleEdit}
               onDelete={setDeletingClient}
               onHistory={handleHistory}
@@ -956,12 +968,19 @@ export function ClientsModule() {
           {/* Mobile cards (hidden on desktop) */}
           <div className="md:hidden">
             <ClientCardList
-              clients={clients}
+              clients={pagedClients}
               onEdit={handleEdit}
               onDelete={setDeletingClient}
               onHistory={handleHistory}
             />
           </div>
+          <PaginationBar
+            page={page}
+            totalPages={totalPages}
+            totalItems={totalItems}
+            pageSize={pageSize}
+            onPageChange={setPage}
+          />
         </>
       )}
 

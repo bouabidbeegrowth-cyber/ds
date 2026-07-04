@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Users, Calendar, TrendingUp, TrendingDown, DollarSign, Activity } from 'lucide-react';
+import { Users, Calendar, TrendingUp, TrendingDown, DollarSign, Activity, Clock, Filter, ShoppingCart } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -22,11 +24,23 @@ import {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+interface TodayAppointment {
+  id: string;
+  client: { firstName: string; lastName: string };
+  employee: { name: string };
+  services: { service: { name: string; price: number } }[];
+  date: string;
+  status: string;
+}
+
 interface DashboardData {
+  filtered: boolean;
   totalClients: number;
-  todayAppointments: number;
+  totalAppointments: number;
+  todayAppointments: TodayAppointment[];
   totalRevenue: number;
   totalExpenses: number;
+  totalPurchases: number;
   netProfit: number;
   topServices: { serviceName: string; count: number }[];
   recentAppointments: {
@@ -38,11 +52,20 @@ interface DashboardData {
   }[];
   monthlyRevenue: { month: string; revenue: number }[];
   monthlyExpenses: { month: string; expenses: number }[];
+  monthlyPurchases: { month: string; purchases: number }[];
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const PIE_COLORS = ['#C26EAD', '#E8A0D8', '#F3D4EA', '#9B4D8A', '#D46BC0'];
+
+const FILTER_PRESETS = [
+  { key: 'all', label: 'Tout' },
+  { key: 'today', label: "Aujourd'hui" },
+  { key: '7d', label: '7 jours' },
+  { key: 'month', label: 'Ce mois' },
+  { key: 'year', label: 'Cette année' },
+];
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   PROGRAMME: {
@@ -78,6 +101,22 @@ const dateFormatter = new Intl.DateTimeFormat('fr-FR', {
 
 function formatDate(dateStr: string): string {
   return dateFormatter.format(new Date(dateStr));
+}
+
+const timeFormatter = new Intl.DateTimeFormat('fr-FR', {
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+function formatTime(dateStr: string): string {
+  return timeFormatter.format(new Date(dateStr));
+}
+
+function toDateInputValue(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -163,7 +202,7 @@ function BarChartTooltip({
       <p className="mb-2 text-sm font-medium text-foreground">{label}</p>
       {payload.map((entry) => (
         <p key={entry.dataKey} className="text-sm" style={{ color: entry.color }}>
-          {entry.dataKey === 'revenue' ? 'Revenus' : 'Dépenses'} : {formatCurrency(entry.value)}
+          {entry.dataKey === 'revenue' ? 'Revenus' : entry.dataKey === 'expenses' ? 'Dépenses' : 'Achats'} : {formatCurrency(entry.value)}
         </p>
       ))}
     </div>
@@ -221,86 +260,163 @@ export function DashboardModule() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function fetchDashboard() {
-      try {
-        const token =
-          typeof window !== 'undefined' ? localStorage.getItem('ds_token') : null;
-        const res = await fetch('/api/dashboard', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+  // Date range filter applied to everything except "Rendez-vous du jour",
+  // which always shows today regardless of this filter.
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [activePreset, setActivePreset] = useState<string>('all');
 
-        if (!res.ok) {
-          throw new Error('Erreur lors du chargement du tableau de bord');
-        }
-
-        const json = await res.json();
-        setData(json);
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : 'Erreur inconnue'
-        );
-      } finally {
-        setLoading(false);
+  const fetchDashboard = useCallback(async (from: string, to: string) => {
+    setLoading(true);
+    try {
+      const token =
+        typeof window !== 'undefined' ? localStorage.getItem('ds_token') : null;
+      const params = new URLSearchParams();
+      if (from && to) {
+        params.set('from', from);
+        params.set('to', to);
       }
+      const res = await fetch(`/api/dashboard?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        throw new Error('Erreur lors du chargement du tableau de bord');
+      }
+
+      const json = await res.json();
+      setData(json);
+      setError(null);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Erreur inconnue'
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDashboard(dateFrom, dateTo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const applyFilter = () => {
+    if (dateFrom && dateTo) {
+      setActivePreset('custom');
+      fetchDashboard(dateFrom, dateTo);
+    }
+  };
+
+  const resetFilter = () => {
+    setDateFrom('');
+    setDateTo('');
+    setActivePreset('all');
+    fetchDashboard('', '');
+  };
+
+  const applyPreset = (key: string) => {
+    const now = new Date();
+    let from: Date;
+    let to: Date;
+
+    switch (key) {
+      case 'today':
+        from = now;
+        to = now;
+        break;
+      case '7d':
+        from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6);
+        to = now;
+        break;
+      case 'month':
+        from = new Date(now.getFullYear(), now.getMonth(), 1);
+        to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        break;
+      case 'year':
+        from = new Date(now.getFullYear(), 0, 1);
+        to = new Date(now.getFullYear(), 11, 31);
+        break;
+      default:
+        resetFilter();
+        return;
     }
 
-    fetchDashboard();
-  }, []);
+    const fromStr = toDateInputValue(from);
+    const toStr = toDateInputValue(to);
+    setDateFrom(fromStr);
+    setDateTo(toStr);
+    setActivePreset(key);
+    fetchDashboard(fromStr, toStr);
+  };
 
   // Merge monthly revenue & expenses into a single dataset for the bar chart
   const chartData = (() => {
     if (!data) return [];
-    const monthMap = new Map<string, { month: string; revenue: number; expenses: number }>();
+    const monthMap = new Map<string, { month: string; revenue: number; expenses: number; purchases: number }>();
+
+    const getOrCreate = (month: string) => {
+      let entry = monthMap.get(month);
+      if (!entry) {
+        entry = { month, revenue: 0, expenses: 0, purchases: 0 };
+        monthMap.set(month, entry);
+      }
+      return entry;
+    };
 
     for (const r of data.monthlyRevenue) {
-      monthMap.set(r.month, { month: r.month, revenue: r.revenue, expenses: 0 });
+      getOrCreate(r.month).revenue = r.revenue;
     }
     for (const e of data.monthlyExpenses) {
-      const existing = monthMap.get(e.month);
-      if (existing) {
-        existing.expenses = e.expenses;
-      } else {
-        monthMap.set(e.month, { month: e.month, revenue: 0, expenses: e.expenses });
-      }
+      getOrCreate(e.month).expenses = e.expenses;
+    }
+    for (const p of data.monthlyPurchases) {
+      getOrCreate(p.month).purchases = p.purchases;
     }
 
-    return Array.from(monthMap.values()).slice(-6);
+    return Array.from(monthMap.values());
   })();
 
   // ─── KPI Card definitions ─────────────────────────────────────────────────
   const kpiCards = data
     ? [
         {
-          label: 'Total clients',
+          label: data.filtered ? 'Clients (période)' : 'Total clients',
           value: data.totalClients.toString(),
           icon: Users,
           iconBg: 'bg-primary/10',
           iconColor: 'text-primary',
         },
         {
-          label: "Rendez-vous du jour",
-          value: data.todayAppointments.toString(),
+          label: data.filtered ? 'Rendez-vous (période)' : 'Total rendez-vous',
+          value: data.totalAppointments.toString(),
           icon: Calendar,
           iconBg: 'bg-blue-50',
           iconColor: 'text-blue-600',
         },
         {
-          label: 'Revenus totaux',
+          label: data.filtered ? 'Revenus (période)' : 'Revenus totaux',
           value: formatCurrency(data.totalRevenue),
           icon: TrendingUp,
           iconBg: 'bg-green-50',
           iconColor: 'text-green-600',
         },
         {
-          label: 'Total dépenses',
+          label: data.filtered ? 'Dépenses (période)' : 'Total dépenses',
           value: formatCurrency(data.totalExpenses),
           icon: TrendingDown,
           iconBg: 'bg-orange-50',
           iconColor: 'text-orange-600',
         },
         {
-          label: 'Bénéfice net',
+          label: data.filtered ? 'Achats (période)' : 'Total achats',
+          value: formatCurrency(data.totalPurchases),
+          icon: ShoppingCart,
+          iconBg: 'bg-amber-50',
+          iconColor: 'text-amber-600',
+        },
+        {
+          label: data.filtered ? 'Bénéfice net (période)' : 'Bénéfice net',
           value: formatCurrency(data.netProfit),
           icon: DollarSign,
           iconBg:
@@ -323,10 +439,124 @@ export function DashboardModule() {
 
   return (
     <div className="space-y-6">
+      {/* ── Rendez-vous du jour (always today, unaffected by the filter) ────── */}
+      <Card className="shadow-sm border-primary/20">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-primary" />
+            Rendez-vous du jour
+          </CardTitle>
+          {!loading && data && (
+            <Badge variant="secondary">{data.todayAppointments.length}</Badge>
+          )}
+        </CardHeader>
+        <CardContent className={!loading && data && data.todayAppointments.length > 0 ? 'px-0 pb-0' : undefined}>
+          {loading ? (
+            <div className="px-6 pb-6 space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full" />
+              ))}
+            </div>
+          ) : !data || data.todayAppointments.length === 0 ? (
+            <p className="px-6 pb-6 text-sm text-muted-foreground">
+              Aucun rendez-vous aujourd&apos;hui
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="border-border">
+                  <TableHead className="px-6">Heure</TableHead>
+                  <TableHead className="px-6">Client</TableHead>
+                  <TableHead className="px-6">Service</TableHead>
+                  <TableHead className="px-6">Employé</TableHead>
+                  <TableHead className="px-6">Statut</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.todayAppointments.map((apt) => (
+                  <TableRow key={apt.id} className="border-border">
+                    <TableCell className="px-6 font-medium whitespace-nowrap">
+                      <span className="flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                        {formatTime(apt.date)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="px-6">
+                      {apt.client.firstName} {apt.client.lastName}
+                    </TableCell>
+                    <TableCell className="px-6 text-muted-foreground">
+                      {apt.services?.map((s) => s.service.name).join(', ') || '—'}
+                    </TableCell>
+                    <TableCell className="px-6 text-muted-foreground">
+                      {apt.employee.name}
+                    </TableCell>
+                    <TableCell className="px-6">
+                      <StatusBadge status={apt.status} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Date range filter (applies to everything below) ─────────────────── */}
+      <Card className="shadow-sm">
+        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Filter className="mr-1 h-4 w-4 shrink-0 text-muted-foreground" />
+            {FILTER_PRESETS.map((preset) => (
+              <Button
+                key={preset.key}
+                size="sm"
+                variant={activePreset === preset.key ? 'default' : 'ghost'}
+                className="h-8"
+                onClick={() => applyPreset(preset.key)}
+              >
+                {preset.label}
+              </Button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              aria-label="Du"
+              type="date"
+              value={dateFrom}
+              onChange={(e) => {
+                setDateFrom(e.target.value);
+                setActivePreset('custom');
+              }}
+              className="h-8 w-[150px]"
+            />
+            <span className="text-sm text-muted-foreground">→</span>
+            <Input
+              aria-label="Au"
+              type="date"
+              value={dateTo}
+              onChange={(e) => {
+                setDateTo(e.target.value);
+                setActivePreset('custom');
+              }}
+              className="h-8 w-[150px]"
+            />
+            <Button
+              size="sm"
+              className="h-8"
+              onClick={applyFilter}
+              disabled={!dateFrom || !dateTo}
+            >
+              Appliquer
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* ── KPI Cards ─────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {loading
-          ? Array.from({ length: 5 }).map((_, i) => <KpiCardSkeleton key={i} />)
+          ? Array.from({ length: 6 }).map((_, i) => <KpiCardSkeleton key={i} />)
           : kpiCards.map((kpi) => {
               const Icon = kpi.icon;
               return (
@@ -368,7 +598,7 @@ export function DashboardModule() {
             <Card className="shadow-sm">
               <CardHeader>
                 <CardTitle className="text-base">
-                  Revenus vs Dépenses
+                  Revenus vs Dépenses vs Achats {data?.filtered ? '(période)' : '(6 derniers mois)'}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -393,7 +623,7 @@ export function DashboardModule() {
                     <Tooltip content={<BarChartTooltip />} />
                     <Legend
                       formatter={(value: string) =>
-                        value === 'revenue' ? 'Revenus' : 'Dépenses'
+                        value === 'revenue' ? 'Revenus' : value === 'expenses' ? 'Dépenses' : 'Achats'
                       }
                       wrapperStyle={{ fontSize: '13px', paddingTop: '8px' }}
                     />
@@ -409,6 +639,12 @@ export function DashboardModule() {
                       radius={[4, 4, 0, 0]}
                       maxBarSize={40}
                     />
+                    <Bar
+                      dataKey="purchases"
+                      fill="#9B4D8A"
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={40}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -417,7 +653,9 @@ export function DashboardModule() {
             {/* Pie Chart — Top 5 Services */}
             <Card className="shadow-sm">
               <CardHeader>
-                <CardTitle className="text-base">Top 5 Services</CardTitle>
+                <CardTitle className="text-base">
+                  Top 5 Services {data?.filtered ? '(période)' : '(toutes les données)'}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
@@ -455,7 +693,9 @@ export function DashboardModule() {
       ) : (
         <Card className="shadow-sm">
           <CardHeader>
-            <CardTitle className="text-base">Derniers rendez-vous</CardTitle>
+            <CardTitle className="text-base">
+              {data?.filtered ? 'Rendez-vous (période)' : 'Derniers rendez-vous'}
+            </CardTitle>
           </CardHeader>
           <CardContent className="px-0 pb-0">
             <Table>

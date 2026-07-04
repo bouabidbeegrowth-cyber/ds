@@ -10,7 +10,9 @@ export type ModuleKey =
   | 'purchases'
   | 'expenses'
   | 'users'
-  | 'dashboard';
+  | 'dashboard'
+  | 'journal'
+  | 'caisse';
 
 export type Permissions = Record<ModuleKey, PermissionLevel>;
 
@@ -23,6 +25,8 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   expenses: 'Dépenses',
   users: 'Utilisateurs',
   dashboard: 'Tableau de bord',
+  journal: 'Journal',
+  caisse: 'Caisse',
 };
 
 export const PERMISSION_LEVELS: { value: PermissionLevel; label: string; description: string }[] = [
@@ -41,6 +45,8 @@ export const ALL_MODULES: ModuleKey[] = [
   'expenses',
   'users',
   'dashboard',
+  'journal',
+  'caisse',
 ];
 
 export const DEFAULT_PERMISSIONS: Permissions = {
@@ -52,6 +58,8 @@ export const DEFAULT_PERMISSIONS: Permissions = {
   expenses: 'none',
   users: 'none',
   dashboard: 'none',
+  journal: 'none',
+  caisse: 'none',
 };
 
 export const ADMIN_PERMISSIONS: Permissions = {
@@ -63,6 +71,8 @@ export const ADMIN_PERMISSIONS: Permissions = {
   expenses: 'full',
   users: 'full',
   dashboard: 'full',
+  journal: 'full',
+  caisse: 'full',
 };
 
 export const EMPLOYEE_PERMISSIONS: Permissions = {
@@ -74,6 +84,8 @@ export const EMPLOYEE_PERMISSIONS: Permissions = {
   expenses: 'none',
   users: 'none',
   dashboard: 'read',
+  journal: 'none',
+  caisse: 'none',
 };
 
 export function parsePermissions(json: string): Permissions {

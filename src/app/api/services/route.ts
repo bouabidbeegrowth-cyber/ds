@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { verifyAuth, requirePermission } from '@/lib/auth';
+import { logAudit } from '@/lib/audit';
 
 export async function GET(req: NextRequest) {
   const auth = await verifyAuth(req);
@@ -9,10 +10,25 @@ export async function GET(req: NextRequest) {
   if (permCheck) return permCheck;
 
   const { searchParams } = new URL(req.url);
-  const activeOnly = searchParams.get('active') === 'true';
+  const q = (searchParams.get('q') || '').trim();
+  const activeParam = searchParams.get('active');
+
+  const where = {
+    ...(activeParam === 'true' || activeParam === 'false'
+      ? { active: activeParam === 'true' }
+      : {}),
+    ...(q
+      ? {
+          OR: [
+            { name: { contains: q } },
+            { description: { contains: q } },
+          ],
+        }
+      : {}),
+  };
 
   const services = await db.service.findMany({
-    where: activeOnly ? { active: true } : undefined,
+    where: Object.keys(where).length > 0 ? where : undefined,
     orderBy: { createdAt: 'desc' },
   });
 
@@ -34,6 +50,14 @@ export async function POST(req: NextRequest) {
 
   const service = await db.service.create({
     data: { name, price: Number(price), duration: Number(duration), description: description || null },
+  });
+
+  await logAudit({
+    actor: auth.user,
+    action: 'CREATE',
+    entity: 'service',
+    entityId: service.id,
+    details: { name, price: Number(price), duration: Number(duration) },
   });
 
   return NextResponse.json(service, { status: 201 });
@@ -63,6 +87,14 @@ export async function PUT(req: NextRequest) {
     },
   });
 
+  await logAudit({
+    actor: auth.user,
+    action: 'UPDATE',
+    entity: 'service',
+    entityId: service.id,
+    details: { name: service.name, active: service.active, price: service.price },
+  });
+
   return NextResponse.json(service);
 }
 
@@ -80,6 +112,13 @@ export async function DELETE(req: NextRequest) {
   }
 
   await db.service.delete({ where: { id } });
+
+  await logAudit({
+    actor: auth.user,
+    action: 'DELETE',
+    entity: 'service',
+    entityId: id,
+  });
 
   return NextResponse.json({ success: true });
 }

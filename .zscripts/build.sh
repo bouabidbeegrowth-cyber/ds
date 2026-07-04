@@ -83,8 +83,8 @@ if [ -f "./db/custom.db" ]; then
     mkdir -p "$BUILD_DIR/db"
     cp -r ./db/. "$BUILD_DIR/db/"
 
-    echo "🗄️  同步构建产物中的数据库结构..."
-    DATABASE_URL="file:$BUILD_DIR/db/custom.db" bun run db:push
+    echo "🗄️  应用数据库迁移（prisma migrate deploy）..."
+    DATABASE_URL="file:$BUILD_DIR/db/custom.db" bun run db:migrate:deploy
     echo "✅ 构建产物数据库已准备完成"
     ls -lah "$BUILD_DIR/db"
 else

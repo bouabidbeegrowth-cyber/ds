@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react';
 import { useAuthStore } from '@/store/auth-store';
 import {
   LayoutDashboard, Users, Sparkles, Calendar, FileText,
-  ShoppingCart, Receipt, UserCog, LogOut, Menu, X, ChevronRight, Shield
+  ShoppingCart, Receipt, UserCog, LogOut, Menu, X, ChevronRight, Shield, Activity, Wallet
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -19,20 +19,24 @@ import { PurchasesModule } from '@/components/modules/purchases/purchases-module
 import { ExpensesModule } from '@/components/modules/expenses/expenses-module';
 import { UsersModule } from '@/components/modules/users/users-module';
 import { RolesModule } from '@/components/modules/roles/roles-module';
-import type { ModuleKey } from '@/lib/permissions';
+import { JournalModule } from '@/components/modules/journal/journal-module';
+import { CaisseModule } from '@/components/modules/caisse/caisse-module';
+import { canRead, type ModuleKey } from '@/lib/permissions';
 
-type Page = 'dashboard' | 'clients' | 'services' | 'appointments' | 'invoices' | 'purchases' | 'expenses' | 'users' | 'roles';
+type Page = 'dashboard' | 'clients' | 'services' | 'appointments' | 'invoices' | 'purchases' | 'expenses' | 'users' | 'roles' | 'journal' | 'caisse';
 
-const NAV_ITEMS: { id: Page; label: string; icon: React.ElementType; module: ModuleKey }[] = [
+const NAV_ITEMS: { id: Page; label: string; icon: React.ElementType; module?: ModuleKey }[] = [
   { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard, module: 'dashboard' },
   { id: 'clients', label: 'Clients', icon: Users, module: 'clients' },
   { id: 'services', label: 'Services', icon: Sparkles, module: 'services' },
   { id: 'appointments', label: 'Rendez-vous', icon: Calendar, module: 'appointments' },
   { id: 'invoices', label: 'Factures', icon: FileText, module: 'invoices' },
+  { id: 'caisse', label: 'Caisse', icon: Wallet, module: 'caisse' },
   { id: 'purchases', label: 'Achats', icon: ShoppingCart, module: 'purchases' },
   { id: 'expenses', label: 'Dépenses', icon: Receipt, module: 'expenses' },
   { id: 'users', label: 'Utilisateurs', icon: UserCog, module: 'users' },
   { id: 'roles', label: 'Rôles', icon: Shield, module: 'users' },
+  { id: 'journal', label: 'Journal', icon: Activity },
 ];
 
 export function AppLayout() {
@@ -49,6 +53,10 @@ export function AppLayout() {
       if (item.id === 'roles') {
         return permissions.users === 'full';
       }
+      if (item.id === 'journal') {
+        return canRead(permissions.journal);
+      }
+      if (!item.module) return true;
       const level = permissions[item.module];
       return level && level !== 'none';
     });
@@ -71,7 +79,7 @@ export function AppLayout() {
     setSidebarOpen(false);
   };
 
-  const currentNav = NAV_ITEMS.find((n) => n.id === activePage);
+  const currentNav = visibleNavItems.find((n) => n.id === activePage);
 
   const renderPage = () => {
     // Only render if the page is accessible
@@ -84,10 +92,12 @@ export function AppLayout() {
       case 'services': return <ServicesModule />;
       case 'appointments': return <AppointmentsModule />;
       case 'invoices': return <InvoicesModule />;
+      case 'caisse': return <CaisseModule />;
       case 'purchases': return <PurchasesModule />;
       case 'expenses': return <ExpensesModule />;
       case 'users': return <UsersModule />;
       case 'roles': return <RolesModule />;
+      case 'journal': return <JournalModule />;
       default: return <DashboardModule />;
     }
   };

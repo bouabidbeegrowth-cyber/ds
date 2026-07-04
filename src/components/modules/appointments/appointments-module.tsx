@@ -6,9 +6,11 @@ import { fr } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { useAuthStore } from '@/store/auth-store';
 import { canWrite, canDelete } from '@/lib/permissions';
+import { usePagination } from '@/hooks/use-pagination';
+import { PaginationBar } from '@/components/shared/pagination-bar';
 import {
   Plus, Calendar, Clock, User, UserCog, FileText,
-  Pencil, Trash2, Check, X, AlertCircle, Sparkles,
+  Pencil, Trash2, Check, X, AlertCircle, Sparkles, Search, Lock,
 } from 'lucide-react';
 
 import { Card, CardContent } from '@/components/ui/card';
@@ -78,6 +80,7 @@ interface Appointment {
   client: Client;
   services: AppointmentService[];
   employee: Employee;
+  invoice: { id: string; status: string; amount: number } | null;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -204,6 +207,8 @@ function LoadingSkeleton() {
 
 export function AppointmentsModule() {
   const { user } = useAuthStore();
+  // New/edited appointments can only be scheduled today or in the future.
+  const todayStr = toDateString(new Date());
   // Data state
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -215,6 +220,7 @@ export function AppointmentsModule() {
   const [activeTab, setActiveTab] = useState<string>('ALL');
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date());
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Create dialog
   const [createOpen, setCreateOpen] = useState(false);
@@ -228,11 +234,18 @@ export function AppointmentsModule() {
   });
   const [creating, setCreating] = useState(false);
 
-  // Notes dialog
-  const [notesOpen, setNotesOpen] = useState(false);
-  const [notesTarget, setNotesTarget] = useState<Appointment | null>(null);
-  const [notesValue, setNotesValue] = useState('');
-  const [savingNotes, setSavingNotes] = useState(false);
+  // Edit dialog
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<Appointment | null>(null);
+  const [editForm, setEditForm] = useState({
+    clientId: '',
+    serviceIds: [] as string[],
+    employeeId: '',
+    date: '',
+    time: '',
+    notes: '',
+  });
+  const [editing, setEditing] = useState(false);
 
   // Delete dialog
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -258,6 +271,32 @@ export function AppointmentsModule() {
 
   const toggleServiceId = (serviceId: string) => {
     setCreateForm((f) => {
+      const ids = f.serviceIds.includes(serviceId)
+        ? f.serviceIds.filter((id) => id !== serviceId)
+        : [...f.serviceIds, serviceId];
+      return { ...f, serviceIds: ids };
+    });
+  };
+
+  // ── Selected services helpers (for edit form) ──────────────────────────────
+
+  const editSelectedServices = useMemo(
+    () => services.filter((s) => editForm.serviceIds.includes(s.id)),
+    [services, editForm.serviceIds],
+  );
+
+  const editSelectedTotalPrice = useMemo(
+    () => editSelectedServices.reduce((sum, s) => sum + s.price, 0),
+    [editSelectedServices],
+  );
+
+  const editSelectedTotalDuration = useMemo(
+    () => editSelectedServices.reduce((sum, s) => sum + s.duration, 0),
+    [editSelectedServices],
+  );
+
+  const toggleEditServiceId = (serviceId: string) => {
+    setEditForm((f) => {
       const ids = f.serviceIds.includes(serviceId)
         ? f.serviceIds.filter((id) => id !== serviceId)
         : [...f.serviceIds, serviceId];
@@ -318,6 +357,27 @@ export function AppointmentsModule() {
     });
     return css;
   }, [dotMap]);
+
+  // ── Search filter (client name, employee name, service, notes) ────────────
+
+  const filteredAppointments = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return appointments;
+    return appointments.filter((apt) => {
+      const clientName = `${apt.client.firstName} ${apt.client.lastName}`.toLowerCase();
+      const employeeName = apt.employee.name.toLowerCase();
+      const serviceNames = apt.services.map((s) => s.service.name).join(' ').toLowerCase();
+      const notes = (apt.notes || '').toLowerCase();
+      return (
+        clientName.includes(q) ||
+        employeeName.includes(q) ||
+        serviceNames.includes(q) ||
+        notes.includes(q)
+      );
+    });
+  }, [appointments, searchQuery]);
+
+  const { page, setPage, pageItems: pagedAppointments, totalPages, totalItems, pageSize } = usePagination(filteredAppointments, 10);
 
   // ── Fetch helpers ──────────────────────────────────────────────────────────
 
@@ -431,32 +491,54 @@ export function AppointmentsModule() {
     }
   };
 
-  const handleOpenNotes = (apt: Appointment) => {
-    setNotesTarget(apt);
-    setNotesValue(apt.notes || '');
-    setNotesOpen(true);
+  const handleOpenEdit = (apt: Appointment) => {
+    const d = new Date(apt.date);
+    setEditTarget(apt);
+    setEditForm({
+      clientId: apt.clientId,
+      serviceIds: apt.services.map((s) => s.serviceId),
+      employeeId: apt.employeeId,
+      date: toDateString(d),
+      time: format(d, 'HH:mm'),
+      notes: apt.notes || '',
+    });
+    setEditOpen(true);
   };
 
-  const handleSaveNotes = async () => {
-    if (!notesTarget) return;
-    setSavingNotes(true);
+  const handleSaveEdit = async () => {
+    if (!editTarget) return;
+    if (!editForm.clientId || editForm.serviceIds.length === 0 || !editForm.employeeId || !editForm.date || !editForm.time) {
+      toast.error('Veuillez remplir tous les champs obligatoires');
+      return;
+    }
+    setEditing(true);
     try {
+      const isoDate = new Date(`${editForm.date}T${editForm.time}:00`).toISOString();
       const res = await fetch('/api/appointments', {
         method: 'PUT',
         headers: authHeaders(),
-        body: JSON.stringify({ id: notesTarget.id, notes: notesValue }),
+        body: JSON.stringify({
+          id: editTarget.id,
+          clientId: editForm.clientId,
+          serviceIds: editForm.serviceIds,
+          employeeId: editForm.employeeId,
+          date: isoDate,
+          notes: editForm.notes,
+        }),
       });
       if (!res.ok) {
-        toast.error('Erreur lors de la sauvegarde des notes');
+        const err = await res.json();
+        toast.error(err.error || 'Erreur lors de la modification');
         return;
       }
-      toast.success('Notes mises à jour');
-      setNotesOpen(false);
+      toast.success('Rendez-vous modifié avec succès');
+      setEditOpen(false);
       fetchAppointments();
+      fetchMonthAppointments(currentMonth);
     } catch {
       toast.error('Erreur de connexion');
     } finally {
-      setSavingNotes(false);
+      setEditing(false);
     }
   };
 
@@ -590,14 +672,27 @@ export function AppointmentsModule() {
             </TabsList>
           </Tabs>
 
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Rechercher par client, employé, service ou note..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+
           {/* Appointments list */}
-          {appointments.length === 0 ? (
+          {filteredAppointments.length === 0 ? (
             <Card>
               <CardContent className="py-12 flex flex-col items-center gap-2 text-muted-foreground">
                 <Calendar className="h-10 w-10 mb-2 opacity-40" />
                 <p className="text-sm font-medium">Aucun rendez-vous trouvé</p>
                 <p className="text-xs">
-                  {selectedDate
+                  {searchQuery
+                    ? 'Aucun résultat pour votre recherche'
+                    : selectedDate
                     ? 'Aucun rendez-vous pour cette date'
                     : 'Créez un nouveau rendez-vous pour commencer'}
                 </p>
@@ -622,7 +717,7 @@ export function AppointmentsModule() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {appointments.map((apt) => (
+                        {pagedAppointments.map((apt) => (
                           <TableRow key={apt.id}>
                             <TableCell className="font-medium">
                               <span className="flex items-center gap-1.5">
@@ -658,12 +753,20 @@ export function AppointmentsModule() {
                               />
                             </TableCell>
                             <TableCell>
-                              {apt.notes ? (
+                              {apt.invoice ? (
+                                apt.notes ? (
+                                  <span className="text-xs text-muted-foreground line-clamp-1" title={apt.notes}>
+                                    {apt.notes}
+                                  </span>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">—</span>
+                                )
+                              ) : apt.notes ? (
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   className="h-7 px-2 text-xs text-muted-foreground"
-                                  onClick={() => handleOpenNotes(apt)}
+                                  onClick={() => handleOpenEdit(apt)}
                                 >
                                   <FileText className="h-3 w-3 mr-1" />
                                   Voir
@@ -673,7 +776,7 @@ export function AppointmentsModule() {
                                   variant="ghost"
                                   size="sm"
                                   className="h-7 px-2 text-xs text-muted-foreground"
-                                  onClick={() => handleOpenNotes(apt)}
+                                  onClick={() => handleOpenEdit(apt)}
                                 >
                                   <Pencil className="h-3 w-3 mr-1" />
                                   Ajouter
@@ -682,13 +785,13 @@ export function AppointmentsModule() {
                             </TableCell>
                             <TableCell className="text-right">
                               <div className="flex items-center justify-end gap-1">
-                              {canWrite(user?.permissions?.appointments) && (
+                              {canWrite(user?.permissions?.appointments) && !apt.invoice && (
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8"
-                                onClick={() => handleOpenNotes(apt)}
-                                title="Modifier les notes"
+                                onClick={() => handleOpenEdit(apt)}
+                                title="Modifier"
                               >
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>
@@ -716,7 +819,7 @@ export function AppointmentsModule() {
 
               {/* Mobile cards */}
               <div className="md:hidden space-y-3 max-h-[calc(100vh-320px)] overflow-y-auto pr-1">
-                {appointments.map((apt) => (
+                {pagedAppointments.map((apt) => (
                   <Card key={apt.id} className="p-4">
                     <div className="flex items-start justify-between gap-2 mb-3">
                       <div className="min-w-0">
@@ -750,15 +853,15 @@ export function AppointmentsModule() {
                       )}
                     </div>
                     <div className="flex items-center gap-2 mt-3 pt-3 border-t">
-                      {canWrite(user?.permissions?.appointments) && (
+                      {canWrite(user?.permissions?.appointments) && !apt.invoice && (
                       <Button
                         variant="outline"
                         size="sm"
                         className="h-8 text-xs"
-                        onClick={() => handleOpenNotes(apt)}
+                        onClick={() => handleOpenEdit(apt)}
                       >
                         <Pencil className="h-3 w-3 mr-1" />
-                        Notes
+                        Modifier
                       </Button>
                       )}
                       {apt.status === 'PROGRAMME' && canDelete(user?.permissions?.appointments) && (
@@ -776,6 +879,13 @@ export function AppointmentsModule() {
                   </Card>
                 ))}
               </div>
+              <PaginationBar
+                page={page}
+                totalPages={totalPages}
+                totalItems={totalItems}
+                pageSize={pageSize}
+                onPageChange={setPage}
+              />
             </>
           )}
         </div>
@@ -879,6 +989,7 @@ export function AppointmentsModule() {
                 <Input
                   id="create-date"
                   type="date"
+                  min={todayStr}
                   value={createForm.date}
                   onChange={(e) => setCreateForm((f) => ({ ...f, date: e.target.value }))}
                 />
@@ -928,43 +1039,144 @@ export function AppointmentsModule() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Notes Dialog ─────────────────────────────────────────────────────── */}
-      <Dialog open={notesOpen} onOpenChange={setNotesOpen}>
-        <DialogContent className="sm:max-w-md">
+      {/* ── Edit Dialog ──────────────────────────────────────────────────────── */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Modifier les notes</DialogTitle>
+            <DialogTitle>Modifier le rendez-vous</DialogTitle>
             <DialogDescription>
-              {notesTarget && (
-                <>
-                  RDV de {notesTarget.client.firstName} {notesTarget.client.lastName}
-                  {notesTarget.services.length > 0 && (
-                    <> — {getServiceNames(notesTarget)}</>
-                  )}
-                </>
-              )}
+              Modifiez le client, les services, l&apos;employé, la date ou les notes.
             </DialogDescription>
           </DialogHeader>
-          <Textarea
-            rows={5}
-            placeholder="Ajouter des notes..."
-            value={notesValue}
-            onChange={(e) => setNotesValue(e.target.value)}
-          />
+          <div className="grid gap-4 py-2">
+            {/* Client */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-client">Client *</Label>
+              <Select
+                value={editForm.clientId}
+                onValueChange={(v) => setEditForm((f) => ({ ...f, clientId: v }))}
+              >
+                <SelectTrigger id="edit-client" className="w-full">
+                  <SelectValue placeholder="Sélectionner un client" />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.firstName} {c.lastName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Services (multi-select) */}
+            <div className="space-y-2">
+              <Label>Services *</Label>
+              <div className="border rounded-lg p-3 space-y-1 max-h-48 overflow-y-auto">
+                {services.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-3">
+                    Aucun service actif. Créez d&apos;abord un service.
+                  </p>
+                ) : (
+                  services.map((s) => (
+                    <label
+                      key={s.id}
+                      className="flex items-center gap-3 rounded-md px-2 py-1.5 cursor-pointer hover:bg-accent transition-colors"
+                    >
+                      <Checkbox
+                        checked={editForm.serviceIds.includes(s.id)}
+                        onCheckedChange={() => toggleEditServiceId(s.id)}
+                      />
+                      <span className="flex-1 text-sm">{s.name}</span>
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {formatPrice(s.price)}
+                      </span>
+                    </label>
+                  ))
+                )}
+              </div>
+              {editSelectedServices.length > 0 && (
+                <div className="flex items-center justify-between text-sm px-1 pt-1">
+                  <span className="text-muted-foreground">
+                    {editSelectedServices.length} service{editSelectedServices.length > 1 ? 's' : ''} sélectionné{editSelectedServices.length > 1 ? 's' : ''}
+                  </span>
+                  <span className="font-medium text-primary">
+                    {formatPrice(editSelectedTotalPrice)} · {formatDuration(editSelectedTotalDuration)}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Employee */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-employee">Employé *</Label>
+              <Select
+                value={editForm.employeeId}
+                onValueChange={(v) => setEditForm((f) => ({ ...f, employeeId: v }))}
+              >
+                <SelectTrigger id="edit-employee" className="w-full">
+                  <SelectValue placeholder="Sélectionner un employé" />
+                </SelectTrigger>
+                <SelectContent>
+                  {employees.map((e) => (
+                    <SelectItem key={e.id} value={e.id}>
+                      {e.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Date & Time */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="edit-date">Date *</Label>
+                <Input
+                  id="edit-date"
+                  type="date"
+                  min={todayStr}
+                  value={editForm.date}
+                  onChange={(e) => setEditForm((f) => ({ ...f, date: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-time">Heure *</Label>
+                <Input
+                  id="edit-time"
+                  type="time"
+                  value={editForm.time}
+                  onChange={(e) => setEditForm((f) => ({ ...f, time: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-notes">Notes</Label>
+              <Textarea
+                id="edit-notes"
+                placeholder="Notes supplémentaires (optionnel)"
+                rows={3}
+                value={editForm.notes}
+                onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))}
+              />
+            </div>
+          </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setNotesOpen(false)} disabled={savingNotes}>
+            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={editing}>
               <X className="h-4 w-4 mr-1" />
               Annuler
             </Button>
-            <Button onClick={handleSaveNotes} disabled={savingNotes}>
-              {savingNotes ? (
+            <Button onClick={handleSaveEdit} disabled={editing}>
+              {editing ? (
                 <>
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                  Sauvegarde...
+                  Enregistrement...
                 </>
               ) : (
                 <>
                   <Check className="h-4 w-4 mr-1" />
-                  Sauvegarder
+                  Enregistrer
                 </>
               )}
             </Button>
@@ -1031,6 +1243,19 @@ function StatusSelect({
   const currentStatus = appointment.status;
   const displayVariant = statusBadgeVariant(currentStatus);
   const displayClass = statusBadgeClass(currentStatus);
+
+  if (appointment.invoice) {
+    return (
+      <Badge
+        variant={displayVariant}
+        className={displayClass}
+        title="Facturé — le statut ne peut plus être modifié"
+      >
+        <Lock className="h-2.5 w-2.5 mr-1" />
+        {STATUS_LABELS[currentStatus]}
+      </Badge>
+    );
+  }
 
   return (
     <Select

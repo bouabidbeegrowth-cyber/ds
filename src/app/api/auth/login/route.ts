@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { ensureRolesSeeded } from '@/lib/seed-roles';
 import { parsePermissions } from '@/lib/permissions';
+import { logAudit } from '@/lib/audit';
 
 export async function POST(req: NextRequest) {
   try {
@@ -58,6 +59,19 @@ export async function POST(req: NextRequest) {
     const isSystemAdmin = user.roleRelation?.isSystem === true && user.roleRelation?.name === 'Administrateur';
 
     const token = `ds_${user.id}_${Date.now()}`;
+
+    await db.user.update({
+      where: { id: user.id },
+      data: { lastActiveAt: new Date() },
+    });
+
+    await logAudit({
+      actor: { id: user.id, username: user.username, name: user.name },
+      action: 'LOGIN',
+      entity: 'auth',
+      entityId: user.id,
+      details: { username: user.username },
+    });
 
     return NextResponse.json({
       token,
