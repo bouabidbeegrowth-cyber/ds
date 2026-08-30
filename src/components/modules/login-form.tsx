@@ -48,8 +48,10 @@ export function LoginForm() {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <img src="/ds-logo.png" alt="DS Esthétique" className="w-28 h-28 mx-auto mb-4 rounded-full shadow-lg" />
-          <h1 className="text-3xl font-bold text-foreground">DS Esthétique</h1>
+          <div className="w-28 h-28 mx-auto mb-4 rounded-full shadow-lg bg-neutral-900 flex items-center justify-center">
+            <img src="/ds-logo.png" alt="Maison Lellethom" className="w-[78%] h-[78%] object-contain" />
+          </div>
+          <h1 className="text-3xl font-bold text-foreground">Maison Lellethom</h1>
           <p className="text-muted-foreground mt-1">Gestion du centre</p>
         </div>
 
@@ -119,7 +121,7 @@ export function LoginForm() {
         </Card>
 
         <p className="text-center text-xs text-muted-foreground mt-6">
-          © {new Date().getFullYear()} DS Esthétique — Tous droits réservés
+          © {new Date().getFullYear()} Maison Lellethom — Tous droits réservés
         </p>
       </div>
     </div>

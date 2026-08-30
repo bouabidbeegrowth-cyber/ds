@@ -101,7 +101,7 @@ const EMPTY_FORM: ExpenseFormData = {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatAmount(amount: number): string {
-  return amount.toLocaleString('fr-DZ') + ' DA';
+  return amount.toLocaleString('fr-DZ') + ' TND';
 }
 
 function getCurrentMonth(): string {

@@ -116,7 +116,7 @@ function toLocaleDateString(d: Date): string {
 }
 
 function formatPrice(n: number): string {
-  return n.toLocaleString('fr-DZ') + ' DA';
+  return n.toLocaleString('fr-DZ') + ' TND';
 }
 
 function formatDuration(mins: number): string {

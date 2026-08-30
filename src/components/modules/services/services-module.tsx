@@ -65,7 +65,7 @@ function formatDuration(minutes: number): string {
 }
 
 function formatPrice(price: number): string {
-  return `${Number(price).toLocaleString('fr-FR')} DA`;
+  return `${Number(price).toLocaleString('fr-FR')} TND`;
 }
 
 const emptyForm: ServiceFormData = {
@@ -537,7 +537,7 @@ export function ServicesModule() {
                     className="pr-10"
                   />
                   <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                    DA
+                    TND
                   </span>
                 </div>
               </div>

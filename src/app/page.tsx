@@ -76,7 +76,9 @@ export default function Home() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center">
-          <img src="/ds-logo.png" alt="DS" className="w-24 h-24 mx-auto mb-4 rounded-full" />
+          <div className="w-24 h-24 mx-auto mb-4 rounded-full bg-neutral-900 flex items-center justify-center">
+            <img src="/ds-logo.png" alt="Maison Lellethom" className="w-[78%] h-[78%] object-contain" />
+          </div>
           <div className="animate-pulse text-muted-foreground">Chargement...</div>
         </div>
       </div>

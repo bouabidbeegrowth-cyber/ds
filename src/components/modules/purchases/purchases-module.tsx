@@ -67,7 +67,7 @@ const emptyForm: PurchaseFormData = {
 };
 
 function formatAmount(amount: number): string {
-  return new Intl.NumberFormat('fr-FR').format(amount) + ' DA';
+  return new Intl.NumberFormat('fr-FR').format(amount) + ' TND';
 }
 
 function formatDate(dateStr: string): string {

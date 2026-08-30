@@ -83,7 +83,7 @@ const formatAmount = (value: number): string =>
   new Intl.NumberFormat('fr-FZ', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(value) + ' DA';
+  }).format(value) + ' TND';
 
 const getInvoiceNumber = (invoiceNumber: number): string =>
   'FAC-' + String(invoiceNumber).padStart(6, '0');

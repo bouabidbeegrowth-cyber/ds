@@ -33,7 +33,7 @@ const formatAmount = (value: number): string =>
   new Intl.NumberFormat('fr-FR', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(value) + ' DA';
+  }).format(value) + ' TND';
 
 const formatDate = (iso: string): string =>
   new Date(iso).toLocaleDateString('fr-FR', {
@@ -73,12 +73,14 @@ export async function generateInvoicePDF(invoice: InvoicePdfData): Promise<void>
   const logoDataUrl = await loadLogoDataUrl();
   const textX = logoDataUrl ? 36 : 14;
   if (logoDataUrl) {
-    doc.addImage(logoDataUrl, 'PNG', 14, 10, 18, 18);
+    doc.setFillColor(23, 23, 23);
+    doc.circle(23, 19, 9, 'F');
+    doc.addImage(logoDataUrl, 'PNG', 16, 12, 14, 14);
   }
 
   doc.setFontSize(20);
   doc.setFont('helvetica', 'bold');
-  doc.text('DS Esthétique', textX, 20);
+  doc.text('Maison Lellethom', textX, 20);
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
   doc.text('Centre de beauté', textX, 26);
@@ -161,7 +163,7 @@ export async function generateInvoicePDF(invoice: InvoicePdfData): Promise<void>
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(150);
   doc.text(
-    `DS Esthétique — Gestion du centre de beauté — Généré le ${new Date().toLocaleDateString('fr-FR')}`,
+    `Maison Lellethom — Gestion du centre de beauté — Généré le ${new Date().toLocaleDateString('fr-FR')}`,
     14,
     285
   );

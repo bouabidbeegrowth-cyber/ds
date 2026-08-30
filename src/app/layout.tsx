@@ -9,7 +9,7 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "DS Esthétique - Gestion du Centre",
+  title: "Maison Lellethom - Gestion du Centre",
   description: "Application de gestion complète pour centre esthétique",
   icons: {
     icon: "/ds-logo.png",
@@ -23,7 +23,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="fr" suppressHydrationWarning>
-      <body className={`${geistSans.variable} antialiased bg-background text-foreground`}>
+      <body className={`${geistSans.variable} antialiased bg-background text-foreground`} suppressHydrationWarning>
         {children}
         <Toaster />
       </body>
