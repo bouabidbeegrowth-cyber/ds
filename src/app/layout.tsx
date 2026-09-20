@@ -9,7 +9,7 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "Maison Lellethom - Gestion du Centre",
+  title: "DS Esthétique - Gestion du Centre",
   description: "Application de gestion complète pour centre esthétique",
   icons: {
     icon: "/ds-logo.png",

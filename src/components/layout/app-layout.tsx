@@ -122,11 +122,9 @@ export function AppLayout() {
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="p-4 flex items-center gap-3">
-            <div className="w-11 h-11 rounded-full bg-neutral-900 flex items-center justify-center shrink-0">
-              <img src="/ds-logo.png" alt="Maison Lellethom" className="w-[78%] h-[78%] object-contain" />
-            </div>
+            <img src="/ds-logo.png" alt="DS" className="w-11 h-11 rounded-full" />
             <div className="flex-1 min-w-0">
-              <h1 className="font-bold text-lg text-foreground leading-tight">Maison Lellethom</h1>
+              <h1 className="font-bold text-lg text-foreground leading-tight">DS Esthétique</h1>
               <p className="text-xs text-muted-foreground truncate">Centre de beauté</p>
             </div>
             <Button
@@ -217,9 +215,7 @@ export function AppLayout() {
             )}
           </div>
           <div className="ml-auto">
-            <div className="w-8 h-8 rounded-full bg-neutral-900 flex items-center justify-center lg:hidden">
-              <img src="/ds-logo.png" alt="Maison Lellethom" className="w-[78%] h-[78%] object-contain" />
-            </div>
+            <img src="/ds-logo.png" alt="DS" className="w-8 h-8 rounded-full lg:hidden" />
           </div>
         </header>
 
@@ -230,7 +226,7 @@ export function AppLayout() {
 
         {/* Footer */}
         <footer className="border-t border-border px-4 py-3 text-center text-xs text-muted-foreground bg-card mt-auto">
-          © {new Date().getFullYear()} Maison Lellethom — Gestion du centre de beauté
+          © {new Date().getFullYear()} DS Esthétique — Gestion du centre de beauté
         </footer>
       </div>
     </div>
